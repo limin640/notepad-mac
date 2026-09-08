@@ -52,11 +52,29 @@ target_link_libraries(scintilla PUBLIC
 
 # ---------------------------------------------------------------------------
 # 目标 1：Scintilla Cocoa 测试程序（验证内核+cocoa 后端编译链接通过）
-# ---------------------------------------------------------------------------
 add_executable(sci_test tests/sci_test.mm)
 target_link_libraries(sci_test PRIVATE scintilla)
 
 # ---------------------------------------------------------------------------
-# 目标 2：Notepad4.app（后续迭代）
+# 目标 2：Notepad4.app（AppKit 壳）
 # ---------------------------------------------------------------------------
-# add_executable(Notepad4 MACOSX_BUNDLE ...)
+add_executable(Notepad4 MACOSX_BUNDLE
+    macapp/main.mm
+    macapp/MainWindowController.mm
+    macapp/EditorDocument.mm
+)
+target_include_directories(Notepad4 PRIVATE
+    "${SCI_ROOT}/include"
+    "${SCI_ROOT}/src"
+    "${SCI_ROOT}/cocoa"
+    "${SCI_ROOT}/lexlib"
+    ${CMAKE_SOURCE_DIR}/macapp
+)
+target_link_libraries(Notepad4 PRIVATE scintilla)
+set_target_properties(Notepad4 PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_NAME "Notepad4"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.ethan.notepad4mac"
+    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+    MACOSX_BUNDLE_INFO_STRING "Notepad4 for macOS"
+)
