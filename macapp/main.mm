@@ -37,7 +37,7 @@ int main(int argc, const char *argv[]) {
 			NSLog(@"[hook] shot mode, argc=%d", argc);
 			if (argc >= 5 && strcmp(argv[3], "--code") == 0) {
 				NSLog(@"[hook] injecting code ext=%s", (argc >= 7) ? argv[6] : "(default cpp)");
-				EditorDocument *doc = [controller currentDocument];
+				EditorDocument *doc = [controller document];
 				[doc.editor setString:[NSString stringWithUTF8String:argv[4]]];
 				NSString *ext = @"cpp";
 				// --code <src> [--ext py] [--find needle]

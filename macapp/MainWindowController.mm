@@ -4,669 +4,781 @@
 #import "SciLexer.h"
 #import "EditLexer.h"
 #import "LexerRegistry.h"
-
-static NSString * const kUntitledCounterKey = @"kUntitledCounter";
-
-@interface MainWindowController ()
-@property (nonatomic, strong) NSToolbar *toolbar;
-@property (nonatomic, strong) StatusBarView *statusBar;
-@property (nonatomic, strong) NSTabView *tabView;
-@property (nonatomic, strong) NSMenuItem *wrapItem;
-@property (nonatomic, strong) NSMenuItem *lineNumbersItem;
-@property (nonatomic, strong) NSMenuItem *indentItem;
-@property (nonatomic, strong) NSMenuItem *statusItem;
-@property (nonatomic, strong) NSPopUpButton *lex;
-@end
+#import "Scintilla.h"
 
 @implementation MainWindowController {
 	FindReplacePanel *_findPanel;
-	NSInteger _untitledCounter;
+	NSView *_editorHost;
+	NSPopUpButton *_lexPopup;
+	NSMenuItem *_wordWrapItem;
+	NSMenuItem *_lineNumbersItem;
+	StatusBarView *_statusBar;
+	EditorDocument *_document;
 }
+@dynamic document;
 
 - (instancetype)init {
 	NSWindow *win = [[NSWindow alloc]
-		initWithContentRect:NSMakeRect(120, 120, 1000, 680)
+		initWithContentRect:NSMakeRect(140, 140, 900, 620)
 		styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
 			   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
 		backing:NSBackingStoreBuffered defer:NO];
-	win.title = @"Notepad4";
-	win.minSize = NSMakeSize(480, 320);
+	win.title = @"Untitled - Notepad4";
+	win.minSize = NSMakeSize(400, 280);
 	self = [super initWithWindow:win];
 	if (self) {
 		win.delegate = self;
 		win.windowController = self;
-		[self buildMenu];
+		_document = [[EditorDocument alloc] initWithNewUntitled:1];
 		[self buildUI:win];
-		[self newTab];
+		[self buildMenu];   // 按 Notepad4.rc 原文复刻
+		[self refreshStatus];
+		[self updateWindowTitle];
 	}
 	return self;
 }
 
-#pragma mark - UI 构建
+#pragma mark - 布局（工具栏 / 编辑器 / 状态栏，单文档无标签）
 
 - (void)buildUI:(NSWindow *)win {
-	// 根容器：上工具栏区 / 中标签+编辑 / 下状态栏
 	NSView *root = [[NSView alloc] initWithFrame:win.contentView.bounds];
 	root.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	win.contentView = root;
 
-	// 工具栏（复刻 Windows 版按钮排布，symbol 图标）
-	NSArray *fileSeg = @[[NSImage imageWithSystemSymbolName:@"doc.badge.plus" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"folder" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"square.and.arrow.down" accessibilityDescription:nil]];
-	NSSegmentedControl *segFile = [NSSegmentedControl segmentedControlWithImages:fileSeg
-		trackingMode:NSSegmentSwitchTrackingMomentary target:self action:@selector(toolbarFileAction:)];
-	segFile.segmentStyle = NSSegmentStyleSeparated;
-
-	NSSegmentedControl *segUndo = [NSSegmentedControl segmentedControlWithImages:@[
-		[NSImage imageWithSystemSymbolName:@"arrow.uturn.backward" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"arrow.uturn.forward" accessibilityDescription:nil]]
-		trackingMode:NSSegmentSwitchTrackingMomentary target:self action:@selector(toolbarUndoAction:)];
-	segUndo.segmentStyle = NSSegmentStyleSeparated;
-
-	NSSegmentedControl *segClipboard = [NSSegmentedControl segmentedControlWithImages:@[
-		[NSImage imageWithSystemSymbolName:@"scissors" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"doc.on.clipboard" accessibilityDescription:nil]]
-		trackingMode:NSSegmentSwitchTrackingMomentary target:self action:@selector(toolbarClipboardAction:)];
-	segClipboard.segmentStyle = NSSegmentStyleSeparated;
-
-	NSSegmentedControl *segFind = [NSSegmentedControl segmentedControlWithImages:@[
-		[NSImage imageWithSystemSymbolName:@"magnifyingglass" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"arrow.right.arrow.left.square" accessibilityDescription:nil]]
-		trackingMode:NSSegmentSwitchTrackingMomentary target:self action:@selector(toolbarFindAction:)];
-	segFind.segmentStyle = NSSegmentStyleSeparated;
-
-	NSSegmentedControl *segZoom = [NSSegmentedControl segmentedControlWithImages:@[
-		[NSImage imageWithSystemSymbolName:@"minus.magnifyingglass" accessibilityDescription:nil],
-		[NSImage imageWithSystemSymbolName:@"plus.magnifyingglass" accessibilityDescription:nil]]
-		trackingMode:NSSegmentSwitchTrackingMomentary target:self action:@selector(toolbarZoomAction:)];
-	segZoom.segmentStyle = NSSegmentStyleSeparated;
-
-	// 词法器选择（F12 对应）
-	NSPopUpButton *lexerPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,0,180,26) pullsDown:NO];
-	_lex = lexerPopup;
-	for (NSDictionary *info in [LexerRegistry allLexersInfo]) {
-		[lexerPopup addItemWithTitle:info[@"name"]];
-		lexerPopup.lastItem.representedObject = info;
-	}
-
-	NSStackView *bar = [NSStackView stackViewWithViews:@[segFile, segUndo, segClipboard, segFind, segZoom, lexerPopup]];
-	bar.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-	bar.spacing = 12;
-	bar.edgeInsets = NSEdgeInsetsMake(6, 12, 6, 12);
-	bar.translatesAutoresizingMaskIntoConstraints = NO;
+	// ---- 工具栏：一排 16px 小图标 + 竖分隔线（对照 v24.07HD 截图）----
+	NSView *bar = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 900, 30)];
 	bar.wantsLayer = YES;
-	bar.layer.backgroundColor = [NSColor windowBackgroundColor].CGColor;
+	bar.layer.backgroundColor = [NSColor controlBackgroundColor].CGColor;
+	bar.translatesAutoresizingMaskIntoConstraints = NO;
 	[root addSubview:bar];
 
-	// 标签页
-	_tabView = [[NSTabView alloc] initWithFrame:NSZeroRect];
-	_tabView.delegate = self;
-	_tabView.tabViewType = NSTopTabsBezelBorder;
-	_tabView.translatesAutoresizingMaskIntoConstraints = NO;
-	[root addSubview:_tabView];
+	NSButton * (^TB)(NSString *sym, SEL act, NSString *tip) = ^NSButton *(NSString *sym, SEL act, NSString *tip) {
+		NSButton *b = [NSButton buttonWithImage:
+			([NSImage imageWithSystemSymbolName:sym accessibilityDescription:nil]
+			 ?: [NSImage imageNamed:NSImageNameSmartBadgeTemplate])
+			target:self action:act];
+		b.imageScaling = NSImageScaleProportionallyDown;
+		b.bezelStyle = NSBezelStyleTexturedRounded;
+		b.toolTip = tip;
+		b.translatesAutoresizingMaskIntoConstraints = NO;
+		[b.widthAnchor constraintEqualToConstant:28].active = YES;
+		[b.heightAnchor constraintEqualToConstant:24].active = YES;
+		return b;
+	};
+	NSView * (^SEP)(void) = ^NSView *(void) {
+		NSView *s = [[NSView alloc] initWithFrame:NSZeroRect];
+		s.wantsLayer = YES;
+		s.layer.backgroundColor = [NSColor separatorColor].CGColor;
+		s.translatesAutoresizingMaskIntoConstraints = NO;
+		[s.widthAnchor constraintEqualToConstant:1].active = YES;
+		[s.heightAnchor constraintEqualToConstant:18].active = YES;
+		return s;
+	};
 
-	// 状态栏
-	_statusBar = [[StatusBarView alloc] initWithFrame:NSMakeRect(0, 0, 600, 22)];
+	// 顺序对照截图：New | Open▾ | Save | SaveAs | Print | PrintPreview | ─ | Undo | Redo | ─ |
+	// Cut | Copy | Paste | ─ | Find | FindNext | ─ | Wrap | Folding | ─ | Reload
+	NSArray *items = @[
+		TB(@"doc", @selector(fileNew), @"New (Ctrl+N)"),
+		TB(@"folder", @selector(fileOpen), @"Open... (Ctrl+O)"),
+		TB(@"square.and.arrow.down", @selector(fileSave), @"Save (Ctrl+S)"),
+		TB(@"square.and.arrow.down.on.square", @selector(fileSaveAs), @"Save As... (F6)"),
+		TB(@"printer", @selector(printDocument), @"Print... (Ctrl+P)"),
+		SEP(),
+		TB(@"arrow.uturn.backward", @selector(editUndo), @"Undo (Ctrl+Z)"),
+		TB(@"arrow.uturn.forward", @selector(editRedo), @"Redo (Ctrl+Y)"),
+		SEP(),
+		TB(@"scissors", @selector(editCut), @"Cut (Ctrl+X)"),
+		TB(@"doc.on.doc", @selector(editCopy), @"Copy (Ctrl+C)"),
+		TB(@"doc.on.clipboard", @selector(editPaste), @"Paste (Ctrl+V)"),
+		SEP(),
+		TB(@"magnifyingglass", @selector(searchFind), @"Find... (Ctrl+F)"),
+		TB(@"arrow.down.right", @selector(searchFindNext), @"Find Next (F3)"),
+		TB(@"arrow.left.arrow.right.square", @selector(searchReplace), @"Replace... (Ctrl+H)"),
+		SEP(),
+		TB(@"text.justify", @selector(viewWordWrap), @"Word Wrap (Ctrl+Shift+W)"),
+		TB(@"chevron.left.forwardslash.chevron.right", @selector(viewCodeFolding), @"Code Folding"),
+		TB(@"arrow.clockwise", @selector(fileRevert), @"Reload (F5)"),
+	];
+
+	// 水平排开
+	NSView *prev = nil;
+	for (NSView *v in items) {
+		[bar addSubview:v];
+		if (!prev) {
+			[bar.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:2].active = YES;
+		} else {
+			[prev.trailingAnchor constraintEqualToAnchor:v.leadingAnchor constant:2].active = YES;
+		}
+		[v.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor].active = YES;
+		prev = v;
+	}
+	// 右侧：词法器下拉（截图最右是循环箭头=reload，下拉在工具栏末尾之外；但 F12 Scheme 更常用，放这）
+	NSPopUpButton *lex = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+	lex.translatesAutoresizingMaskIntoConstraints = NO;
+	for (NSDictionary *info in [LexerRegistry allLexersInfo]) {
+		[lex addItemWithTitle:info[@"name"]];
+		lex.lastItem.representedObject = info;
+	}
+	[bar addSubview:lex];
+	[prev.trailingAnchor constraintEqualToAnchor:lex.leadingAnchor constant:8].active = YES;
+	[lex.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor].active = YES;
+	[bar.trailingAnchor constraintEqualToAnchor:lex.trailingAnchor constant:4].active = YES;
+	[lex.widthAnchor constraintEqualToConstant:150].active = YES;
+	_lexPopup = lex;
+
+	// ---- 编辑器（占满中间）----
+	_editorHost = [[NSView alloc] initWithFrame:NSZeroRect];
+	_editorHost.translatesAutoresizingMaskIntoConstraints = NO;
+	[root addSubview:_editorHost];
+	_document.editor.translatesAutoresizingMaskIntoConstraints = NO;
+	[_editorHost addSubview:_document.editor];
+	[_editorHost.leadingAnchor constraintEqualToAnchor:_document.editor.leadingAnchor].active = YES;
+	[_editorHost.trailingAnchor constraintEqualToAnchor:_document.editor.trailingAnchor].active = YES;
+	[_editorHost.topAnchor constraintEqualToAnchor:_document.editor.topAnchor].active = YES;
+	[_editorHost.bottomAnchor constraintEqualToAnchor:_document.editor.bottomAnchor].active = YES;
+
+	// ---- 状态栏 ----
+	_statusBar = [[StatusBarView alloc] initWithFrame:NSMakeRect(0, 0, 900, 22)];
 	_statusBar.translatesAutoresizingMaskIntoConstraints = NO;
 	[root addSubview:_statusBar];
 
-	// 锚点布局：bar 顶部 38 / tabs 中间 / status 底部 22
+	// 约束
 	[root.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor].active = YES;
 	[root.topAnchor constraintEqualToAnchor:bar.topAnchor].active = YES;
-	[bar.heightAnchor constraintEqualToConstant:40].active = YES;
+	[bar.heightAnchor constraintEqualToConstant:30].active = YES;
 
-	[root.leadingAnchor constraintEqualToAnchor:_tabView.leadingAnchor].active = YES;
-	[root.trailingAnchor constraintEqualToAnchor:_tabView.trailingAnchor].active = YES;
-	[bar.bottomAnchor constraintEqualToAnchor:_tabView.topAnchor].active = YES;
+	[root.leadingAnchor constraintEqualToAnchor:_editorHost.leadingAnchor].active = YES;
+	[root.trailingAnchor constraintEqualToAnchor:_editorHost.trailingAnchor].active = YES;
+	[bar.bottomAnchor constraintEqualToAnchor:_editorHost.topAnchor].active = YES;
 
 	[root.leadingAnchor constraintEqualToAnchor:_statusBar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:_statusBar.trailingAnchor].active = YES;
 	[_statusBar.heightAnchor constraintEqualToConstant:22].active = YES;
-	[_tabView.bottomAnchor constraintEqualToAnchor:_statusBar.topAnchor].active = YES;
+	[_editorHost.bottomAnchor constraintEqualToAnchor:_statusBar.topAnchor].active = YES;
 	[root.bottomAnchor constraintEqualToAnchor:_statusBar.bottomAnchor].active = YES;
 
-	// 查找面板（悬浮于编辑区底部之上）
-	_findPanel = [[FindReplacePanel alloc] initWithFrame:NSMakeRect(0, 0, 600, 84)];
+	_findPanel = [[FindReplacePanel alloc] initWithFrame:NSMakeRect(0, 0, 620, 84)];
 	[_findPanel attachToWindow:win];
 }
 
-#pragma mark - 菜单（复刻 Windows 版：文件/编辑/搜索/查看/帮助）
+#pragma mark - 菜单（Notepad4.rc 原文）
+
+static NSMenu *M(NSString *title) {
+	NSMenu *m = [[NSMenu alloc] initWithTitle:title];
+	return m;
+}
+static NSMenuItem *MI(NSMenu *m, NSString *title, SEL act, NSString *key, NSEventModifierFlags flags) {
+	NSMenuItem *i = [m addItemWithTitle:title action:act keyEquivalent:key ?: @""];
+	if (flags) i.keyEquivalentModifierMask = flags;
+	return i;
+}
+static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 
 - (void)buildMenu {
-	NSMenu *menubar = [[NSMenu alloc] init];
+	NSMenu *mb = [[NSMenu alloc] init];
 
-	// App 菜单
-	NSMenuItem *appItem = [menubar addItemWithTitle:@"Notepad4" action:nil keyEquivalent:@""];
-	NSMenu *appMenu = [[NSMenu alloc] init];
-	[appMenu addItemWithTitle:@"关于 Notepad4" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
-	[appMenu addItem:[NSMenuItem separatorItem]];
-	[appMenu addItemWithTitle:@"隐藏 Notepad4" action:@selector(hide:) keyEquivalent:@"h"];
-	[appMenu addItemWithTitle:@"隐藏其它" action:@selector(hideOtherApplications:) keyEquivalent:@"h"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagOption;
-	[appMenu addItemWithTitle:@"显示全部" action:@selector(unhideAllApplications:) keyEquivalent:@""];
-	[appMenu addItem:[NSMenuItem separatorItem]];
-	[appMenu addItemWithTitle:@"退出 Notepad4" action:@selector(terminate:) keyEquivalent:@"q"];
+	// App 菜单（macOS 必需）
+	NSMenuItem *appItem = [mb addItemWithTitle:@"Notepad4" action:nil keyEquivalent:@""];
+	NSMenu *appMenu = M(@"");
+	[appMenu addItemWithTitle:@"About Notepad4" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+	MSep(appMenu);
+	[appMenu addItemWithTitle:@"Hide Notepad4" action:@selector(hide:) keyEquivalent:@"h"];
+	[appMenu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagOption;
+	[appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+	MSep(appMenu);
+	[appMenu addItemWithTitle:@"Quit Notepad4" action:@selector(terminate:) keyEquivalent:@"q"];
 	appItem.submenu = appMenu;
 
-	// 文件
-	NSMenuItem *fileItem = [menubar addItemWithTitle:@"文件(F)" action:nil keyEquivalent:@""];
-	NSMenu *fileMenu = [[NSMenu alloc] init];
-	[fileMenu addItemWithTitle:@"新建\tCtrl+N" action:@selector(newTab) keyEquivalent:@"n"];
-	[fileMenu addItemWithTitle:@"新建窗口" action:@selector(newWindow) keyEquivalent:@""];
-	[fileMenu addItemWithTitle:@"打开...\tCtrl+O" action:@selector(openDocument) keyEquivalent:@"o"];
-	[fileMenu addItemWithTitle:@"重新加载\tF5" action:@selector(revertDocument) keyEquivalent:[NSString stringWithFormat:@"%d", NSF5FunctionKey]];
-	[fileMenu addItemWithTitle:@"在外部程序中打开" action:@selector(openExternal) keyEquivalent:@""];
-	[fileMenu addItem:[NSMenuItem separatorItem]];
-	[fileMenu addItemWithTitle:@"保存\tCtrl+S" action:@selector(saveDocument) keyEquivalent:@"s"];
-	[fileMenu addItemWithTitle:@"另存为...\tF6" action:@selector(saveDocumentAs) keyEquivalent:[NSString stringWithFormat:@"%d", NSF6FunctionKey]];
-	[fileMenu addItemWithTitle:@"保存副本...\tCtrl+F6" action:@selector(saveCopyAs) keyEquivalent:@""];
-	[fileMenu addItem:[NSMenuItem separatorItem]];
-	[fileMenu addItemWithTitle:@"页面设置..." action:@selector(pageSetup) keyEquivalent:@""];
-	[fileMenu addItemWithTitle:@"打印...\tCtrl+P" action:@selector(printDocument) keyEquivalent:@"p"];
-	[fileMenu addItem:[NSMenuItem separatorItem]];
-	// 编码子菜单
-	NSMenuItem *encItem = [fileMenu addItemWithTitle:@"编码" action:nil keyEquivalent:@""];
-	NSMenu *encMenu = [[NSMenu alloc] init];
-	for (NSString *enc in @[@"UTF-8", @"UTF-16LE", @"UTF-16BE", @"GBK", @"BIG5", @"Shift-JIS", @"Latin-1"]) {
-		NSMenuItem *mi = [encMenu addItemWithTitle:[NSString stringWithFormat:@"重新加载为 %@", enc]
-			action:@selector(reloadEncoding:) keyEquivalent:@""];
-		mi.representedObject = enc;
-	}
-	[encMenu addItem:[NSMenuItem separatorItem]];
-	for (NSString *enc in @[@"UTF-8", @"UTF-16LE", @"GBK"]) {
-		NSMenuItem *mi = [encMenu addItemWithTitle:[NSString stringWithFormat:@"保存为 %@", enc]
-			action:@selector(saveEncoding:) keyEquivalent:@""];
-		mi.representedObject = enc;
-	}
-	encItem.submenu = encMenu;
-	[fileMenu addItem:[NSMenuItem separatorItem]];
-	[fileMenu addItemWithTitle:@"退出" action:@selector(terminate:) keyEquivalent:@""];
-	fileItem.submenu = fileMenu;
+	NSString *F3 = [NSString stringWithFormat:@"%d", NSF3FunctionKey];
+	NSString *F5 = [NSString stringWithFormat:@"%d", NSF5FunctionKey];
+	NSString *F6 = [NSString stringWithFormat:@"%d", NSF6FunctionKey];
+	NSString *F10 = [NSString stringWithFormat:@"%d", NSF10FunctionKey];
+	NSString *F12 = [NSString stringWithFormat:@"%d", NSF12FunctionKey];
 
-	// 编辑（对齐 Windows 版大编辑菜单）
-	NSMenuItem *editItem = [menubar addItemWithTitle:@"编辑(E)" action:nil keyEquivalent:@""];
-	NSMenu *editMenu = [[NSMenu alloc] init];
-	[editMenu addItemWithTitle:@"撤销\tCtrl+Z" action:@selector(undo:) keyEquivalent:@"z"];
-	[editMenu addItemWithTitle:@"重做\tCtrl+Y" action:@selector(redo:) keyEquivalent:@"y"];
-	[editMenu addItem:[NSMenuItem separatorItem]];
-	[editMenu addItemWithTitle:@"剪切\tCtrl+X" action:@selector(cut:) keyEquivalent:@"x"];
-	[editMenu addItemWithTitle:@"复制\tCtrl+C" action:@selector(copy:) keyEquivalent:@"c"];
-	[editMenu addItemWithTitle:@"粘贴\tCtrl+V" action:@selector(paste:) keyEquivalent:@"v"];
-	[editMenu addItem:[NSMenuItem separatorItem]];
-	NSMenuItem *delMenu = [editMenu addItemWithTitle:@"删除" action:nil keyEquivalent:@""];
-	NSMenu *delSub = [[NSMenu alloc] init];
-	[delSub addItemWithTitle:@"删除行\tCtrl+Shift+D" action:@selector(deleteLine) keyEquivalent:@"D"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagShift;
-	[delSub addItemWithTitle:@"删除到行首\tCtrl+Shift+Backspace" action:@selector(deleteLineLeft) keyEquivalent:@""];
-	[delSub addItemWithTitle:@"删除到行尾\tCtrl+Shift+Del" action:@selector(deleteLineRight) keyEquivalent:@""];
-	delMenu.submenu = delSub;
-	[editMenu addItemWithTitle:@"全选\tCtrl+A" action:@selector(selectAll:) keyEquivalent:@"a"];
-	[editMenu addItemWithTitle:@"选词\tCtrl+Space" action:@selector(selectWord) keyEquivalent:@" "].keyEquivalentModifierMask = NSEventModifierFlagCommand;
-	[editMenu addItemWithTitle:@"选行\tCtrl+Shift+Space" action:@selector(selectLine) keyEquivalent:@""];
-	[editMenu addItem:[NSMenuItem separatorItem]];
-	NSMenuItem *lineMenu = [editMenu addItemWithTitle:@"行操作" action:nil keyEquivalent:@""];
-	NSMenu *lineSub = [[NSMenu alloc] init];
-	[lineSub addItemWithTitle:@"上移行\tAlt+Up" action:@selector(moveLineUp) keyEquivalent:[NSString stringWithFormat:@"%d", NSUpArrowFunctionKey]].keyEquivalentModifierMask = NSEventModifierFlagOption;
-	[lineSub addItemWithTitle:@"下移行\tAlt+Down" action:@selector(moveLineDown) keyEquivalent:[NSString stringWithFormat:@"%d", NSDownArrowFunctionKey]].keyEquivalentModifierMask = NSEventModifierFlagOption;
-	[lineSub addItemWithTitle:@"复制行\tCtrl+D" action:@selector(duplicateLine) keyEquivalent:@"d"];
-	[lineSub addItemWithTitle:@"剪切行\tCtrl+Shift+X" action:@selector(cutLine) keyEquivalent:@"x"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagShift;
-	[lineSub addItemWithTitle:@"合并行\tCtrl+J" action:@selector(joinLines) keyEquivalent:@"j"];
-	[lineSub addItemWithTitle:@"行转置\tAlt+S" action:@selector(transposeLine) keyEquivalent:@""];
-	[lineSub addItemWithTitle:@"去除行尾空格\tAlt+T" action:@selector(trimLines) keyEquivalent:@""];
-	lineMenu.submenu = lineSub;
-	NSMenuItem *caseMenu = [editMenu addItemWithTitle:@"大小写转换" action:nil keyEquivalent:@""];
-	NSMenu *caseSub = [[NSMenu alloc] init];
-	[caseSub addItemWithTitle:@"大写\tCtrl+Shift+U" action:@selector(toUpper) keyEquivalent:@"u"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagShift;
-	[caseSub addItemWithTitle:@"小写\tCtrl+U" action:@selector(toLower) keyEquivalent:@"u"];
-	[caseSub addItemWithTitle:@"词首大写" action:@selector(toTitleCase) keyEquivalent:@""];
-	[caseSub addItemWithTitle:@"反转大小写" action:@selector(toInvertCase) keyEquivalent:@""];
-	caseMenu.submenu = caseSub;
-	NSMenuItem *enc2Menu = [editMenu addItemWithTitle:@"编码转换" action:nil keyEquivalent:@""];
-	NSMenu *enc2Sub = [[NSMenu alloc] init];
-	[enc2Sub addItemWithTitle:@"Tab -> 空格\tCtrl+Shift+S" action:@selector(tabsToSpaces) keyEquivalent:@""];
-	[enc2Sub addItemWithTitle:@"空格 -> Tab\tCtrl+Shift+T" action:@selector(spacesToTabs) keyEquivalent:@""];
-	[enc2Sub addItemWithTitle:@"URL 编码\tCtrl+Shift+E" action:@selector(urlEncode) keyEquivalent:@""];
-	[enc2Sub addItemWithTitle:@"URL 解码\tCtrl+Shift+R" action:@selector(urlDecode) keyEquivalent:@""];
-	enc2Menu.submenu = enc2Sub;
-	editItem.submenu = editMenu;
+	// ===== File =====
+	NSMenu *file = M(@"File");
+	MI(file, @"New\tCtrl+N", @selector(fileNew), @"n", 0);
+	MI(file, @"New Window\tAlt+N", @selector(fileNewWindow), @"n", NSEventModifierFlagOption);
+	MI(file, @"Open...\tCtrl+O", @selector(fileOpen), @"o", 0);
+	MI(file, @"Save\tCtrl+S", @selector(fileSave), @"s", 0);
+	MI(file, @"Save As...\tF6", @selector(fileSaveAs), F6, 0);
+	MI(file, @"Save Backup", @selector(fileSaveBackup), @"", 0);
+	MI(file, @"Save Copy...\tCtrl+F6", @selector(fileSaveCopy), F6, NSEventModifierFlagCommand);
+	MSep(file);
+	NSMenuItem *fm = MI(file, @"File Mode", nil, @"", 0);
+	NSMenu *fms = M(@"");
+	MI(fms, @"Read Only File", @selector(nyi), @"", 0);
+	MI(fms, @"Read Only Mode\tF10", @selector(nyi), F10, 0);
+	fm.submenu = fms;
+	MI(file, @"Revert\tF5", @selector(fileRevert), F5, 0);
+	NSMenuItem *rl = MI(file, @"Reload", nil, @"", 0);
+	NSMenu *rls = M(@"");
+	MI(rls, @"As UTF-8\tShift+F8", @selector(reloadUTF8), @"", 0);
+	MI(rls, @"As ANSI\tCtrl+Shift+A", @selector(reloadANSI), @"", 0);
+	MI(rls, @"As GBK", @selector(reloadGBK), @"", 0);
+	MSep(rls);
+	MI(rls, @"With Encoding...\tF8", @selector(nyi), @"", 0);
+	rl.submenu = rls;
+	MSep(file);
+	NSMenuItem *enc = MI(file, @"Encoding", nil, @"", 0);
+	NSMenu *encs = M(@"");
+	MI(encs, @"ANSI", @selector(nyi), @"", 0).representedObject = @"ANSI";
+	MI(encs, @"UTF-8", @selector(setEncodingUTF8), @"", 0);
+	MI(encs, @"UTF-8 BOM", @selector(setEncodingUTF8BOM), @"", 0);
+	MI(encs, @"UTF-16LE BOM", @selector(setEncodingUTF16LE), @"", 0);
+	MI(encs, @"UTF-16BE BOM", @selector(setEncodingUTF16BE), @"", 0);
+	enc.submenu = encs;
+	NSMenuItem *eol = MI(file, @"Line Endings", nil, @"", 0);
+	NSMenu *eols = M(@"");
+	MI(eols, @"Windows (CR+LF)", @selector(setEOLCRLF), @"", 0);
+	MI(eols, @"Unix/macOS (LF)", @selector(setEOLLF), @"", 0);
+	eol.submenu = eols;
+	MSep(file);
+	MI(file, @"Page Setup...", @selector(nyi), @"", 0);
+	MI(file, @"Print...\tCtrl+P", @selector(printDocument), @"p", 0);
+	MSep(file);
+	MI(file, @"Properties...", @selector(fileProperties), @"", 0);
+	MI(file, @"Open Containing Folder", @selector(openContainingFolder), @"", 0);
+	MSep(file);
+	MI(file, @"Recent (History)...\tAlt+H", @selector(nyi), @"", 0);
+	MSep(file);
+	MI(file, @"Exit\tAlt+F4", @selector(terminate), @"", 0);
+	{ NSMenuItem *_it_file = [mb addItemWithTitle:@"File" action:nil keyEquivalent:@""]; _it_file.submenu = file; }
 
-	// 搜索
-	NSMenuItem *searchItem = [menubar addItemWithTitle:@"搜索(S)" action:nil keyEquivalent:@""];
-	NSMenu *searchMenu = [[NSMenu alloc] init];
-	[searchMenu addItemWithTitle:@"查找...\tCtrl+F" action:@selector(findInDoc) keyEquivalent:@"f"];
-	[searchMenu addItemWithTitle:@"查找下一个\tF3" action:@selector(findNext) keyEquivalent:[NSString stringWithFormat:@"%d", NSF3FunctionKey]];
-	[searchMenu addItemWithTitle:@"查找上一个\tShift+F3" action:@selector(findPrev) keyEquivalent:[NSString stringWithFormat:@"%d", NSF3FunctionKey]].keyEquivalentModifierMask = NSEventModifierFlagShift;
-	[searchMenu addItemWithTitle:@"替换...\tCtrl+H" action:@selector(replaceInDoc) keyEquivalent:@"h"];
-	[searchMenu addItem:[NSMenuItem separatorItem]];
-	[searchMenu addItemWithTitle:@"跳转到行...\tCtrl+G" action:@selector(gotoLine) keyEquivalent:@"g"];
-	[searchMenu addItemWithTitle:@"跳转到匹配括号\tCtrl+B" action:@selector(gotoBrace) keyEquivalent:@"b"];
-	[searchMenu addItem:[NSMenuItem separatorItem]];
-	[searchMenu addItemWithTitle:@"书签: 切换\tCtrl+F2" action:@selector(bookmarkToggle) keyEquivalent:@""];
-	[searchMenu addItemWithTitle:@"书签: 下一个\tF2" action:@selector(bookmarkNext) keyEquivalent:[NSString stringWithFormat:@"%d", NSF2FunctionKey]];
-	[searchMenu addItemWithTitle:@"书签: 清除\tAlt+F2" action:@selector(bookmarkClear) keyEquivalent:@""];
-	searchItem.submenu = searchMenu;
+	// ===== Edit =====
+	NSMenu *edit = M(@"Edit");
+	MI(edit, @"Undo\tCtrl+Z", @selector(editUndo), @"z", 0);
+	MI(edit, @"Redo\tCtrl+Y", @selector(editRedo), @"y", 0);
+	MSep(edit);
+	MI(edit, @"Cut\tCtrl+X", @selector(editCut), @"x", 0);
+	MI(edit, @"Copy\tCtrl+C", @selector(editCopy), @"c", 0);
+	MI(edit, @"Paste\tCtrl+V", @selector(editPaste), @"v", 0);
+	MI(edit, @"Delete\tDel", @selector(editDelete), @"", 0);
+	MI(edit, @"Select All\tCtrl+A", @selector(editSelectAll), @"a", 0);
+	MI(edit, @"Swap\tCtrl+K", @selector(nyi), @"k", 0);
+	MSep(edit);
+	MI(edit, @"Clear Document", @selector(editClearDocument), @"", 0);
+	MI(edit, @"Clear Clipboard", @selector(nyi), @"", 0);
+	NSMenuItem *cc = MI(edit, @"Copy to Clipboard", nil, @"", 0);
+	NSMenu *ccs = M(@"");
+	MI(ccs, @"File Name", @selector(nyi), @"", 0);
+	MI(ccs, @"Full Path Name\tAlt+Shift+F9", @selector(nyi), @"", 0);
+	MSep(ccs);
+	MI(ccs, @"Copy All\tAlt+A", @selector(nyi), @"a", NSEventModifierFlagOption);
+	MI(ccs, @"Copy as RTF", @selector(nyi), @"", 0);
+	cc.submenu = ccs;
+	MSep(edit);
+	NSMenuItem *sel = MI(edit, @"Selection", nil, @"", 0);
+	NSMenu *sels = M(@"");
+	MI(sels, @"Duplicate\tAlt+D", @selector(nyi), @"d", NSEventModifierFlagOption);
+	MSep(sels);
+	MI(sels, @"Toggle Line Comment\tCtrl+/", @selector(editLineComment), @"/", 0);
+	MI(sels, @"Indent\tTab", @selector(editIndent), @"", 0);
+	MI(sels, @"Unindent\tShift+Tab", @selector(editUnindent), @"", 0);
+	MSep(sels);
+	MI(sels, @"Strip Trailing Blanks\tAlt+T", @selector(editTrimTrailing), @"t", NSEventModifierFlagOption);
+	MI(sels, @"Remove Blank Lines\tAlt+R", @selector(nyi), @"r", NSEventModifierFlagOption);
+	sel.submenu = sels;
+	NSMenuItem *lines = MI(edit, @"Lines", nil, @"", 0);
+	NSMenu *lss = M(@"");
+	MI(lss, @"Move Up\tAlt+Up", @selector(editMoveLineUp), [NSString stringWithFormat:@"%d", NSUpArrowFunctionKey], NSEventModifierFlagOption);
+	MI(lss, @"Move Down\tAlt+Down", @selector(editMoveLineDown), [NSString stringWithFormat:@"%d", NSDownArrowFunctionKey], NSEventModifierFlagOption);
+	MI(lss, @"Transpose\tAlt+S", @selector(editTranspose), @"s", NSEventModifierFlagOption);
+	MSep(lss);
+	MI(lss, @"Duplicate Line\tCtrl+D", @selector(editDuplicateLine), @"d", 0);
+	MI(lss, @"Cut Line\tCtrl+Shift+X", @selector(editCutLine), @"x", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(lss, @"Copy Line\tCtrl+Shift+C", @selector(editCopyLine), @"c", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(lss, @"Delete Line\tCtrl+Shift+D", @selector(editDeleteLine), @"d", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MSep(lss);
+	MI(lss, @"Join Lines\tCtrl+J", @selector(editJoinLines), @"j", 0);
+	MI(lss, @"Split Lines\tCtrl+I", @selector(editSplitLines), @"i", 0);
+	lines.submenu = lss;
+	NSMenuItem *conv = MI(edit, @"Convert", nil, @"", 0);
+	NSMenu *cvs = M(@"");
+	MI(cvs, @"UPPER CASE\tCtrl+Shift+U", @selector(editUpper), @"u", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(cvs, @"lower case\tCtrl+U", @selector(editLower), @"u", 0);
+	MI(cvs, @"Invert Case", @selector(nyi), @"", 0);
+	MI(cvs, @"Title Case", @selector(nyi), @"", 0);
+	MSep(cvs);
+	MI(cvs, @"Tabify Selection (Indent)\tCtrl+Alt+T", @selector(nyi), @"t", NSEventModifierFlagCommand|NSEventModifierFlagOption);
+	MI(cvs, @"Untabify Selection (Indent)\tCtrl+Alt+S", @selector(nyi), @"s", NSEventModifierFlagCommand|NSEventModifierFlagOption);
+	conv.submenu = cvs;
+	NSMenuItem *ins = MI(edit, @"Insert", nil, @"", 0);
+	NSMenu *insm = M(@"");
+	MI(insm, @"Complete Word\tAlt+/", @selector(editCompleteWord), @"/", NSEventModifierFlagOption);
+	MSep(insm);
+	MI(insm, @"New GUID", @selector(insertGUID), @"", 0);
+	MI(insm, @"File Name", @selector(nyi), @"", 0);
+	MSep(insm);
+	MI(insm, @"Current Date Time", @selector(insertDateTime), @"", 0);
+	MI(insm, @"Unix Timestamp", @selector(nyi), @"", 0);
+	ins.submenu = insm;
+	{ NSMenuItem *_it_edit = [mb addItemWithTitle:@"Edit" action:nil keyEquivalent:@""]; _it_edit.submenu = edit; }
 
-	// 查看
-	NSMenuItem *viewItem = [menubar addItemWithTitle:@"查看(V)" action:nil keyEquivalent:@""];
-	NSMenu *viewMenu = [[NSMenu alloc] init];
-	[viewMenu addItemWithTitle:@"选择语法...\tF12" action:@selector(chooseLexer) keyEquivalent:[NSString stringWithFormat:@"%d", NSF12FunctionKey]];
-	[viewMenu addItemWithTitle:@"使用默认代码样式\tShift+F12" action:@selector(resetStyle) keyEquivalent:@""];
-	[viewMenu addItem:[NSMenuItem separatorItem]];
-	_wrapItem = [viewMenu addItemWithTitle:@"自动换行\tCtrl+W" action:@selector(toggleWrap) keyEquivalent:@"w"];
-	_wrapItem.state = NSControlStateValueOff;
-	_lineNumbersItem = [viewMenu addItemWithTitle:@"显示行号\tCtrl+Shift+N" action:@selector(toggleLineNumbers) keyEquivalent:@"n"];
+	// ===== Search =====
+	NSMenu *search = M(@"Search");
+	MI(search, @"Find...\tCtrl+F", @selector(searchFind), @"f", 0);
+	MI(search, @"Save Find Text", @selector(nyi), @"", 0);
+	MI(search, @"Find Next\tF3", @selector(searchFindNext), F3, 0);
+	MI(search, @"Find Previous\tShift+F3", @selector(searchFindPrev), F3, NSEventModifierFlagShift);
+	MI(search, @"Replace...\tCtrl+H", @selector(searchReplace), @"h", 0);
+	MI(search, @"Replace Next\tF4", @selector(nyi), [NSString stringWithFormat:@"%d", NSF4FunctionKey], 0);
+	MSep(search);
+	MI(search, @"Find Matching Brace\tCtrl+B", @selector(nyi), @"b", 0);
+	MI(search, @"Select Word", @selector(nyi), @"", 0);
+	MSep(search);
+	NSMenuItem *bm = MI(search, @"Bookmarks", nil, @"", 0);
+	NSMenu *bms = M(@"");
+	MI(bms, @"Toggle\tCtrl+F2", @selector(bookmarkToggle), @"", NSEventModifierFlagCommand);
+	MSep(bms);
+	MI(bms, @"Goto Next\tF2", @selector(bookmarkNext), [NSString stringWithFormat:@"%d", NSF2FunctionKey], 0);
+	MI(bms, @"Goto Previous\tShift+F2", @selector(bookmarkPrev), [NSString stringWithFormat:@"%d", NSF2FunctionKey], NSEventModifierFlagShift);
+	MSep(bms);
+	MI(bms, @"Clear All\tAlt+F2", @selector(bookmarkClear), @"", 0);
+	bm.submenu = bms;
+	NSMenuItem *go = MI(search, @"Goto", nil, @"", 0);
+	NSMenu *gom = M(@"");
+	MI(gom, @"Goto Line...\tCtrl+G", @selector(gotoLine), @"g", 0);
+	go.submenu = gom;
+	{ NSMenuItem *_it_search = [mb addItemWithTitle:@"Search" action:nil keyEquivalent:@""]; _it_search.submenu = search; }
+
+	// ===== View =====
+	NSMenu *view = M(@"View");
+	_wordWrapItem = MI(view, @"Word Wrap\tCtrl+Shift+W", @selector(viewWordWrap), @"w", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	_wordWrapItem.state = NSControlStateValueOff;
+	MI(view, @"Long Line Marker\tCtrl+Shift+L", @selector(nyi), @"l", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, @"Indentation Guides\tCtrl+Shift+G", @selector(viewIndentGuides), @"g", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MSep(view);
+	MI(view, @"Show Whitespace\tCtrl+Shift+8", @selector(viewWhitespace), @"8", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, @"Show Line Endings\tCtrl+Shift+9", @selector(viewEOLs), @"9", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MSep(view);
+	MI(view, @"Visual Brace Matching\tCtrl+Shift+V", @selector(nyi), @"v", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MSep(view);
+	_lineNumbersItem = MI(view, @"Line Numbers\tCtrl+Shift+N", @selector(viewLineNumbers), @"n", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	_lineNumbersItem.state = NSControlStateValueOn;
-	[viewMenu addItemWithTitle:@"显示空白字符\tCtrl+Shift+8" action:@selector(toggleWhitespace) keyEquivalent:@"8"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagShift;
-	[viewMenu addItemWithTitle:@"显示换行符\tCtrl+Shift+9" action:@selector(toggleEOLs) keyEquivalent:@"9"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagShift;
-	_indentItem = [viewMenu addItemWithTitle:@"显示缩进参考线\tCtrl+Shift+G" action:@selector(toggleIndentGuides) keyEquivalent:@""];
-	_indentItem.state = NSControlStateValueOn;
-	[viewMenu addItem:[NSMenuItem separatorItem]];
-	[viewMenu addItemWithTitle:@"放大\tCtrl++" action:@selector(zoomIn) keyEquivalent:@"+"];
-	[viewMenu addItemWithTitle:@"缩小\tCtrl+-" action:@selector(zoomOut) keyEquivalent:@"-"];
-	[viewMenu addItemWithTitle:@"重置缩放\tCtrl+\\" action:@selector(zoomReset) keyEquivalent:@"\\"];
-	[viewMenu addItem:[NSMenuItem separatorItem]];
-	_statusItem = [viewMenu addItemWithTitle:@"显示状态栏\tShift+F11" action:@selector(toggleStatusBar) keyEquivalent:[NSString stringWithFormat:@"%d", NSF11FunctionKey]];
-	_statusItem.state = NSControlStateValueOn;
-	_statusItem.keyEquivalentModifierMask = NSEventModifierFlagShift;
-	viewItem.submenu = viewMenu;
+	MI(view, @"Bookmark Margin\tCtrl+Shift+M", @selector(nyi), @"m", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MSep(view);
+	MI(view, @"Show Code Folding", @selector(viewCodeFolding), @"", 0);
+	NSMenuItem *zm = MI(view, @"Zoom", nil, @"", 0);
+	NSMenu *zmm = M(@"");
+	MI(zmm, @"Zoom In\tCtrl++", @selector(viewZoomIn), @"+", 0);
+	MI(zmm, @"Zoom Out\tCtrl+-", @selector(viewZoomOut), @"-", 0);
+	MI(zmm, @"Reset Zoom\tCtrl+\\", @selector(viewZoomReset), @"\\", 0);
+	zm.submenu = zmm;
+	MI(view, @"Toggle Full Screen\tF11", @selector(toggleFullScreen), [NSString stringWithFormat:@"%d", NSF11FunctionKey], 0);
+	{ NSMenuItem *_it_view = [mb addItemWithTitle:@"View" action:nil keyEquivalent:@""]; _it_view.submenu = view; }
 
-	// 帮助
-	NSMenuItem *helpItem = [menubar addItemWithTitle:@"帮助(H)" action:nil keyEquivalent:@""];
-	NSMenu *helpMenu = [[NSMenu alloc] init];
-	[helpMenu addItemWithTitle:@"关于 Notepad4" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
-	helpItem.submenu = helpMenu;
+	// ===== Scheme =====
+	NSMenu *scheme = M(@"Scheme");
+	MI(scheme, @"Syntax Scheme...\tF12", @selector(schemeChoose), F12, 0);
+	MI(scheme, @"Use Default Code Style\tShift+F12", @selector(schemeReset), F12, NSEventModifierFlagShift);
+	MSep(scheme);
+	NSMenuItem *thm = MI(scheme, @"Style Theme", nil, @"", 0);
+	NSMenu *thms = M(@"");
+	MI(thms, @"Default", @selector(themeDefault), @"", 0);
+	MI(thms, @"Dark", @selector(themeDark), @"", 0);
+	thm.submenu = thms;
+	{ NSMenuItem *_it_scheme = [mb addItemWithTitle:@"Scheme" action:nil keyEquivalent:@""]; _it_scheme.submenu = scheme; }
 
-	NSApp.mainMenu = menubar;
+	// ===== Settings =====
+	NSMenu *settings = M(@"Settings");
+	MI(settings, @"Insert Tabs as Spaces", @selector(nyi), @"", 0);
+	MI(settings, @"Tab Settings...\tCtrl+T", @selector(nyi), @"t", 0);
+	MI(settings, @"Auto Completion Settings...", @selector(nyi), @"", 0);
+	MSep(settings);
+	NSMenuItem *ap = MI(settings, @"Appearance", nil, @"", 0);
+	NSMenu *aps = M(@"");
+	MI(aps, @"Show Menu\tAlt+F11", @selector(nyi), @"", 0);
+	MI(aps, @"Show Toolbar\tCtrl+F11", @selector(nyi), @"", 0);
+	MI(aps, @"Show Statusbar\tShift+F11", @selector(toggleStatusBar), @"", 0);
+	ap.submenu = aps;
+	MI(settings, @"Save Settings On Exit", @selector(nyi), @"", 0);
+	MI(settings, @"Save Settings Now\tF7", @selector(nyi), [NSString stringWithFormat:@"%d", NSF7FunctionKey], 0);
+	{ NSMenuItem *_it_settings = [mb addItemWithTitle:@"Settings" action:nil keyEquivalent:@""]; _it_settings.submenu = settings; }
+
+	// ===== Tools =====
+	NSMenu *tools = M(@"Tools");
+	MI(tools, @"Execute Document\tCtrl+L", @selector(nyi), @"l", 0);
+	MI(tools, @"Open Document With...", @selector(nyi), @"", 0);
+	MI(tools, @"Run Command...\tCtrl+R", @selector(nyi), @"r", 0);
+	MSep(tools);
+	NSMenuItem *ws = MI(tools, @"Action on Selection", nil, @"", 0);
+	NSMenu *wsm = M(@"");
+	MI(wsm, @"Open File, Folder, Link, etc.", @selector(nyi), @"", 0);
+	MI(wsm, @"Search with &Google", @selector(nyi), @"", 0);
+	ws.submenu = wsm;
+	NSMenuItem *b64 = MI(tools, @"Base64", nil, @"", 0);
+	NSMenu *b64m = M(@"");
+	MI(b64m, @"Standard Encode", @selector(base64Encode), @"", 0);
+	MI(b64m, @"URL Safe Encode", @selector(nyi), @"", 0);
+	MI(b64m, @"Decode", @selector(base64Decode), @"", 0);
+	b64.submenu = b64m;
+	NSMenuItem *webt = MI(tools, @"Web Tools", nil, @"", 0);
+	NSMenu *wtm = M(@"");
+	MI(wtm, @"URL Encode\tCtrl+Shift+E", @selector(urlEncode), @"e", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(wtm, @"URL Decode\tCtrl+Shift+R", @selector(urlDecode), @"r", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(wtm, @"Escape HTML/XML Chars", @selector(nyi), @"", 0);
+	MI(wtm, @"Unescape HTML/XML Chars", @selector(nyi), @"", 0);
+	webt.submenu = wtm;
+	{ NSMenuItem *_it_tools = [mb addItemWithTitle:@"Tools" action:nil keyEquivalent:@""]; _it_tools.submenu = tools; }
+
+	// ===== Help =====
+	NSMenu *help = M(@"Help");
+	MI(help, @"Project Home", @selector(helpHome), @"", 0);
+	MI(help, @"About Notepad4", @selector(orderFrontStandardAboutPanel:), @"", 0);
+	{ NSMenuItem *_it_help = [mb addItemWithTitle:@"Help" action:nil keyEquivalent:@""]; _it_help.submenu = help; }
+
+	NSApp.mainMenu = mb;
 }
 
-#pragma mark - 工具栏动作
-
-- (void)toolbarFileAction:(NSSegmentedControl *)sender {
-	switch (sender.selectedSegment) {
-		case 0: [self newTab]; break;
-		case 1: [self openDocument]; break;
-		case 2: [self saveDocument]; break;
-	}
+- (EditorDocument *)document {
+	return _document;
+}
+- (void)setDocument:(EditorDocument *)doc {
+	_document = doc;
 }
 
-- (void)toolbarUndoAction:(NSSegmentedControl *)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
-	if (sender.selectedSegment == 0) [doc.editor message:SCI_UNDO wParam:0 lParam:0];
-	else [doc.editor message:SCI_REDO wParam:0 lParam:0];
-	[self refreshStatus];
-}
-
-- (void)toolbarClipboardAction:(NSSegmentedControl *)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
-	switch (sender.selectedSegment) {
-		case 0: [doc.editor message:SCI_CUT wParam:0 lParam:0]; break;
-		case 1: [doc.editor message:SCI_COPY wParam:0 lParam:0]; break;
-		case 2: [doc.editor message:SCI_PASTE wParam:0 lParam:0]; break;
-	}
-	[self refreshStatus];
-}
-
-- (void)toolbarFindAction:(NSSegmentedControl *)sender {
-	if (sender.selectedSegment == 0) [_findPanel showFind:NO];
-	else [_findPanel showFind:YES];
-}
-
-- (void)toolbarZoomAction:(NSSegmentedControl *)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
-	ScintillaView *e = doc.editor;
-	if (sender.selectedSegment == 0) [e message:SCI_ZOOMOUT wParam:0 lParam:0];
-	else [e message:SCI_ZOOMIN wParam:0 lParam:0];
-	[self refreshStatus];
-}
-
-- (void)lexerChanged:(NSPopUpButton *)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
-	NSDictionary *info = sender.selectedItem.representedObject;
-	NSString *exts = info[@"extensions"];
-	NSString *firstExt = [[exts componentsSeparatedByString:@";"] firstObject] ?: @"txt";
-	[doc applyLexerForExtension:[firstExt stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
-	[self refreshStatus];
-}
-
-#pragma mark - Tab 管理
-
-- (EditorDocument *)currentDocument {
-	NSTabViewItem *item = _tabView.selectedTabViewItem;
-	return item ? item.identifier : nil;
-}
-
-- (void)newTab {
-	_untitledCounter += 1;
-	EditorDocument *doc = [[EditorDocument alloc] initWithNewUntitled:_untitledCounter];
-	[self addTabForDocument:doc];
-}
-
-- (void)newWindow {
-	MainWindowController *wc = [[MainWindowController alloc] init];
-	[wc showWindow:nil];
-}
-
-- (void)addTabForDocument:(EditorDocument *)doc {
-	NSTabViewItem *item = [[NSTabViewItem alloc] initWithIdentifier:doc];
-	item.label = doc.tabTitle;
-	NSView *container = [[NSView alloc] initWithFrame:NSZeroRect];
-	container.translatesAutoresizingMaskIntoConstraints = NO;
-	doc.editor.translatesAutoresizingMaskIntoConstraints = NO;
-	[container addSubview:doc.editor];
-	[container addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[ed]|" options:0 metrics:nil views:@{@"ed": doc.editor}]];
-	[container addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[ed]|" options:0 metrics:nil views:@{@"ed": doc.editor}]];
-	item.view = container;
-	[_tabView addTabViewItem:item];
-	[_tabView selectTabViewItem:item];
-	[self updateWindowTitle];
-	[[NSNotificationCenter defaultCenter] addObserver:self
-		selector:@selector(docDirtyChanged:)
-		name:@"EditorDocumentDirtyChanged" object:doc];
-	[[NSNotificationCenter defaultCenter] addObserver:self
-		selector:@selector(refreshStatus)
-		name:@"EditorDocumentDirtyChanged" object:doc];
-}
-
-- (void)docDirtyChanged:(NSNotification *)n {
-	EditorDocument *doc = n.object;
-	for (NSTabViewItem *item in _tabView.tabViewItems) {
-		if (item.identifier == doc) {
-			item.label = doc.dirty ? [doc.tabTitle stringByAppendingString:@" •"] : doc.tabTitle;
-		}
-	}
-	[self updateWindowTitle];
-}
+#pragma mark - 状态与标题
 
 - (void)refreshStatus {
-	[self.statusBar updateForDocument:self.currentDocument];
+	[_statusBar updateForDocument:_document];
 }
 
 - (void)updateWindowTitle {
-	EditorDocument *doc = self.currentDocument;
-	self.window.title = doc.windowTitle ?: @"Notepad4";
+	NSString *base = _document.fileURL.lastPathComponent ?: @"Untitled";
+	NSString *prefix = _document.dirty ? @"*" : @"";
+	self.window.title = [NSString stringWithFormat:@"%@%@ - Notepad4", prefix, base];
+}
+
+- (void)docDirtyChanged:(NSNotification *)n {
+	[self updateWindowTitle];
 	[self refreshStatus];
 }
 
-- (void)tabView:(NSTabView *)tabView didSelectTabViewItem:(NSTabViewItem *)item {
-	[self updateWindowTitle];
-	[self.window makeFirstResponder:[[self.currentDocument editor] content]];
+#pragma mark - File
+
+- (void)fileNew {
+	self.document = [[EditorDocument alloc] initWithNewUntitled:1];
+	[self swapEditor];
 }
-
-#pragma mark - 文件动作
-
-- (void)openDocument {
+- (void)fileNewWindow {
+	MainWindowController *wc = [[MainWindowController alloc] init];
+	[wc showWindow:nil];
+}
+- (void)fileOpen {
 	NSOpenPanel *panel = [NSOpenPanel openPanel];
-	panel.allowsMultipleSelection = YES;
-	panel.canChooseDirectories = NO;
-	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse resp) {
-		if (resp != NSModalResponseOK) return;
-		for (NSURL *url in panel.URLs) {
-			EditorDocument *doc = [[EditorDocument alloc] initWithFileURL:url contents:@""];
-			NSError *err = nil;
-			if ([doc loadFromURL:url error:&err]) {
-				[self addTabForDocument:doc];
-			} else {
-				NSAlert *alert = [[NSAlert alloc] init];
-				alert.messageText = @"打开失败";
-				alert.informativeText = err.localizedDescription;
-				[alert beginSheetModalForWindow:self.window completionHandler:nil];
-			}
+	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSModalResponseOK) return;
+		EditorDocument *doc = [[EditorDocument alloc] initWithFileURL:panel.URL contents:@""];
+		NSError *err = nil;
+		if ([doc loadFromURL:panel.URL error:&err]) {
+			self.document = doc;
+			[self swapEditor];
 		}
 	}];
 }
-
-- (void)revertDocument {
-	EditorDocument *doc = self.currentDocument;
-	if (doc.fileURL) {
-		[doc reloadWithEncoding:doc.currentEncoding];
-		[self refreshStatus];
-	}
-}
-
-- (void)openExternal {
-	EditorDocument *doc = self.currentDocument;
-	if (doc.fileURL) {
-		[[NSWorkspace sharedWorkspace] openURL:doc.fileURL];
-	}
-}
-
-- (BOOL)saveDocument {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return NO;
-	if (!doc.fileURL) return [self saveDocumentAs];
-	NSError *err = nil;
-	if (![doc saveToURL:doc.fileURL error:&err]) {
-		NSAlert *a = [[NSAlert alloc] init];
-		a.messageText = @"保存失败";
-		a.informativeText = err.localizedDescription;
-		[a beginSheetModalForWindow:self.window completionHandler:nil];
-		return NO;
-	}
+- (void)swapEditor {
+	for (NSView *sub in _editorHost.subviews) [sub removeFromSuperview];
+	_document.editor.translatesAutoresizingMaskIntoConstraints = NO;
+	[_editorHost addSubview:_document.editor];
+	[_editorHost.leadingAnchor constraintEqualToAnchor:_document.editor.leadingAnchor].active = YES;
+	[_editorHost.trailingAnchor constraintEqualToAnchor:_document.editor.trailingAnchor].active = YES;
+	[_editorHost.topAnchor constraintEqualToAnchor:_document.editor.topAnchor].active = YES;
+	[_editorHost.bottomAnchor constraintEqualToAnchor:_document.editor.bottomAnchor].active = YES;
+	[[NSNotificationCenter defaultCenter] removeObserver:self name:@"EditorDocumentDirtyChanged" object:nil];
+	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(docDirtyChanged:) name:@"EditorDocumentDirtyChanged" object:_document];
+	[self updateWindowTitle];
 	[self refreshStatus];
+	[self.window makeFirstResponder:[_document.editor content]];
+}
+- (BOOL)fileSave {
+	if (!_document.fileURL) { [self fileSaveAs]; return YES; }
+	NSError *err = nil;
+	if (![_document saveToURL:_document.fileURL error:&err]) return NO;
+	[self updateWindowTitle];
 	return YES;
 }
-
-- (BOOL)saveDocumentAs {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return NO;
+- (void)fileSaveAs {
 	NSSavePanel *panel = [NSSavePanel savePanel];
-	panel.nameFieldStringValue = doc.tabTitle;
-	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse resp) {
-		if (resp != NSModalResponseOK) return;
+	panel.nameFieldStringValue = _document.tabTitle ?: @"Untitled.txt";
+	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSModalResponseOK) return;
 		NSError *err = nil;
-		if (![doc saveToURL:panel.URL error:&err]) {
-			NSAlert *a = [[NSAlert alloc] init];
-			a.messageText = @"保存失败";
-			a.informativeText = err.localizedDescription;
-			[a beginSheetModalForWindow:self.window completionHandler:nil];
-		} else {
-			[doc applyLexerForExtension:panel.URL.pathExtension.lowercaseString];
-			[self docDirtyChanged:[NSNotification notificationWithName:@"x" object:doc]];
+		if ([self.document saveToURL:panel.URL error:&err]) {
+			[self.document applyLexerForExtension:panel.URL.pathExtension.lowercaseString];
+			[self updateWindowTitle];
 			[self refreshStatus];
 		}
 	}];
-	return YES;
 }
-
-- (void)saveCopyAs {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
-	NSSavePanel *panel = [NSSavePanel savePanel];
-	panel.nameFieldStringValue = doc.tabTitle;
-	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse resp) {
-		if (resp != NSModalResponseOK) return;
-		NSString *text = [doc.editor string];
-		[text writeToURL:panel.URL atomically:YES encoding:NSUTF8StringEncoding error:nil];
-	}];
-}
-
-- (void)pageSetup {}
-- (void)printDocument {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
-	NSPrintOperation *op = [NSPrintOperation printOperationWithView:doc.editor];
-	[op runOperationModalForWindow:self.window delegate:nil didRunSelector:nil contextInfo:nil];
-}
-
-- (void)closeTab {
-	if (_tabView.numberOfTabViewItems <= 1) {
-		[self.window performClose:self];
-		return;
+- (void)fileSaveBackup {}
+- (void)fileSaveCopy {}
+- (void)fileRevert {
+	if (_document.fileURL) {
+		[_document reloadWithEncoding:_document.currentEncoding];
+		[self refreshStatus];
 	}
-	NSTabViewItem *item = _tabView.selectedTabViewItem;
-	EditorDocument *doc = item.identifier;
-	[[NSNotificationCenter defaultCenter] removeObserver:self name:@"EditorDocumentDirtyChanged" object:doc];
-	[_tabView removeTabViewItem:item];
-	[self updateWindowTitle];
 }
-
-#pragma mark - 编码
-
-- (void)reloadEncoding:(NSMenuItem *)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (doc) [doc reloadWithEncoding:sender.representedObject];
-	[self refreshStatus];
-}
-
-- (void)saveEncoding:(NSMenuItem *)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (doc) [doc setSaveEncoding:sender.representedObject];
-	[self refreshStatus];
-}
-
-#pragma mark - 编辑扩展动作
-
-- (ScintillaView *)curEditor {
-	return self.currentDocument.editor;
-}
-
-- (void)deleteLine { [[self curEditor] message:SCI_LINEDELETE wParam:0 lParam:0]; [self refreshStatus]; }
-- (void)deleteLineLeft { [[self curEditor] message:SCI_DELLINELEFT wParam:0 lParam:0]; }
-- (void)deleteLineRight { [[self curEditor] message:SCI_DELLINERIGHT wParam:0 lParam:0]; }
-- (void)selectWord { [[self curEditor] message:SCI_WORDRIGHT wParam:0 lParam:0]; [[self curEditor] message:SCI_WORDLEFTEXTEND wParam:0 lParam:0]; }
-- (void)selectLine { [[self curEditor] message:SCI_LINETRANSPOSE wParam:0 lParam:0]; [[self curEditor] message:SCI_LINETRANSPOSE wParam:0 lParam:0]; } // 占位，见下行真实现
-- (void)moveLineUp { [[self curEditor] message:SCI_MOVESELECTEDLINESUP wParam:0 lParam:0]; [self refreshStatus]; }
-- (void)moveLineDown { [[self curEditor] message:SCI_MOVESELECTEDLINESDOWN wParam:0 lParam:0]; [self refreshStatus]; }
-- (void)duplicateLine { [[self curEditor] message:SCI_LINEDUPLICATE wParam:0 lParam:0]; [self refreshStatus]; }
-- (void)cutLine { [[self curEditor] message:SCI_LINECUT wParam:0 lParam:0]; }
-- (void)joinLines { [[self curEditor] message:SCI_TARGETFROMSELECTION wParam:0 lParam:0]; [[self curEditor] message:SCI_LINESJOIN wParam:0 lParam:0]; }
-- (void)transposeLine { [[self curEditor] message:SCI_LINETRANSPOSE wParam:0 lParam:0]; }
-- (void)trimLines { [[self curEditor] message:SCI_TARGETWHOLEDOCUMENT wParam:0 lParam:0]; /* 简化：全文档去尾空格后续接 */ }
-
-- (void)toUpper { [[self curEditor] message:SCI_UPPERCASE wParam:0 lParam:0]; }
-- (void)toLower { [[self curEditor] message:SCI_LOWERCASE wParam:0 lParam:0]; }
-- (void)toTitleCase { /* TitleCase 后续接 EditCase */ }
-- (void)toInvertCase { /* 后续接 */ }
-
-- (void)tabsToSpaces { [[self curEditor] message:SCI_TARGETWHOLEDOCUMENT wParam:0 lParam:0]; [[self curEditor] message:SCI_SETUSETABS wParam:0 lParam:0]; }
-- (void)spacesToTabs { [[self curEditor] message:SCI_TARGETWHOLEDOCUMENT wParam:0 lParam:0]; }
-- (void)urlEncode {}
-- (void)urlDecode {}
-
-#pragma mark - 搜索动作
-
-- (void)findInDoc { [_findPanel showFind:NO]; }
-- (void)replaceInDoc { [_findPanel showFind:YES]; }
-- (void)findNext:(id)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (doc) [_findPanel findNext:doc];
-	[self refreshStatus];
-}
-- (void)findPrev:(id)sender {
-	EditorDocument *doc = self.currentDocument;
-	if (doc) [_findPanel findPrevious:doc];
-	[self refreshStatus];
-}
-- (void)gotoLine {
-	EditorDocument *doc = self.currentDocument;
-	if (!doc) return;
+- (void)fileProperties {
+	NSString *info = [NSString stringWithFormat:@"%@\n%@\n%@",
+		_document.fileURL.path ?: @"(untitled)",
+		_document.currentEncoding ?: @"UTF-8",
+		_document.currentLexer ? @"lexer" : @"text"];
 	NSAlert *a = [[NSAlert alloc] init];
-	a.messageText = @"跳转到行";
+	a.messageText = @"Properties";
+	a.informativeText = info;
+	[a runModal];
+}
+- (void)openContainingFolder {
+	if (_document.fileURL) {
+		[[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[_document.fileURL]];
+	}
+}
+- (void)printDocument {
+	NSPrintOperation *op = [NSPrintOperation printOperationWithView:_document.editor];
+	[op runOperation];
+}
+
+#pragma mark - Reload/Encoding
+
+- (void)reloadUTF8 { [_document reloadWithEncoding:@"UTF-8"]; [self refreshStatus]; }
+- (void)reloadANSI { [_document reloadWithEncoding:@"Latin-1"]; [self refreshStatus]; }
+- (void)reloadGBK { [_document reloadWithEncoding:@"GBK"]; [self refreshStatus]; }
+- (void)setEncodingUTF8 { [_document setSaveEncoding:@"UTF-8"]; [self refreshStatus]; }
+- (void)setEncodingUTF8BOM { [_document setSaveEncoding:@"UTF-8"]; }
+- (void)setEncodingUTF16LE { [_document setSaveEncoding:@"UTF-16LE"]; [self refreshStatus]; }
+- (void)setEncodingUTF16BE { [_document setSaveEncoding:@"UTF-16BE"]; [self refreshStatus]; }
+- (void)setEOLCRLF { [_document.editor message:SCI_CONVERTEOLS wParam:SC_EOL_CRLF lParam:0]; [self refreshStatus]; }
+- (void)setEOLLF { [_document.editor message:SCI_CONVERTEOLS wParam:SC_EOL_LF lParam:0]; [self refreshStatus]; }
+
+#pragma mark - Edit
+
+- (void)editUndo { [_document.editor message:SCI_UNDO wParam:0 lParam:0]; [self refreshStatus]; }
+- (void)editRedo { [_document.editor message:SCI_REDO wParam:0 lParam:0]; [self refreshStatus]; }
+- (void)editCut { [_document.editor message:SCI_CUT wParam:0 lParam:0]; }
+- (void)editCopy { [_document.editor message:SCI_COPY wParam:0 lParam:0]; }
+- (void)editPaste { [_document.editor message:SCI_PASTE wParam:0 lParam:0]; }
+- (void)editDelete { [_document.editor message:SCI_CLEAR wParam:0 lParam:0]; }
+- (void)editSelectAll { [_document.editor message:SCI_SELECTALL wParam:0 lParam:0]; }
+- (void)editClearDocument { [_document.editor message:SCI_CLEARALL wParam:0 lParam:0]; }
+- (void)editLineComment { /* 需要词法器 line-comment 配置，后续接 */ }
+- (void)editIndent { [_document.editor message:SCI_TAB wParam:0 lParam:0]; }
+- (void)editUnindent { [_document.editor message:SCI_BACKTAB wParam:0 lParam:0]; }
+- (void)editTrimTrailing {
+	ScintillaView *e = _document.editor;
+	const sptr_t lines = [e message:SCI_GETLINECOUNT];
+	[e message:SCI_BEGINUNDOACTION wParam:0 lParam:0];
+	for (sptr_t l = 0; l < lines; l++) {
+		[e message:SCI_TARGETFROMSELECTION wParam:0 lParam:0];
+		const sptr_t start = [e message:SCI_POSITIONFROMLINE wParam:l];
+		const sptr_t end = [e message:SCI_GETLINEENDPOSITION wParam:l];
+		// 找行尾空白起点
+		sptr_t p = end;
+		while (p > start) {
+			const char ch = (char)[e message:SCI_GETCHARAT wParam:p-1];
+			if (ch == ' ' || ch == '\t') p--;
+			else break;
+		}
+		if (p < end) {
+			[e message:SCI_SETTARGETSTART wParam:p lParam:0];
+			[e message:SCI_SETTARGETEND wParam:end lParam:0];
+			[e message:SCI_REPLACETARGET wParam:0 lParam:(sptr_t)""];
+		}
+	}
+	[e message:SCI_ENDUNDOACTION wParam:0 lParam:0];
+}
+- (void)editMoveLineUp { [_document.editor message:SCI_MOVESELECTEDLINESUP wParam:0 lParam:0]; }
+- (void)editMoveLineDown { [_document.editor message:SCI_MOVESELECTEDLINESDOWN wParam:0 lParam:0]; }
+- (void)editTranspose { [_document.editor message:SCI_LINETRANSPOSE wParam:0 lParam:0]; }
+- (void)editDuplicateLine { [_document.editor message:SCI_LINEDUPLICATE wParam:0 lParam:0]; }
+- (void)editCutLine { [_document.editor message:SCI_LINECUT wParam:0 lParam:0]; }
+- (void)editCopyLine { [_document.editor message:SCI_LINECOPY wParam:0 lParam:0]; }
+- (void)editDeleteLine { [_document.editor message:SCI_LINEDELETE wParam:0 lParam:0]; }
+- (void)editJoinLines {
+	ScintillaView *e = _document.editor;
+	[e message:SCI_TARGETFROMSELECTION wParam:0 lParam:0];
+	[e message:SCI_LINESJOIN wParam:0 lParam:0];
+}
+- (void)editSplitLines {
+	ScintillaView *e = _document.editor;
+	[e message:SCI_TARGETFROMSELECTION wParam:0 lParam:0];
+	[e message:SCI_LINESSPLIT wParam:0 lParam:0];
+}
+- (void)editUpper { [_document.editor message:SCI_UPPERCASE wParam:0 lParam:0]; }
+- (void)editLower { [_document.editor message:SCI_LOWERCASE wParam:0 lParam:0]; }
+- (void)editCompleteWord { /* 手动触发补全 */ }
+- (void)insertGUID {
+	NSString *guid = [NSUUID UUID].UUIDString.lowercaseString;
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)guid.UTF8String];
+}
+- (void)insertDateTime {
+	NSDateFormatter *f = [[NSDateFormatter alloc] init];
+	f.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+	NSString *s = [f stringFromDate:[NSDate date]];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)s.UTF8String];
+}
+
+#pragma mark - Search
+
+- (void)searchFind { [_findPanel showFind:NO]; }
+- (void)searchReplace { [_findPanel showFind:YES]; }
+- (void)searchFindNext { [_findPanel findNext:_document]; [self refreshStatus]; }
+- (void)searchFindPrev { [_findPanel findPrevious:_document]; [self refreshStatus]; }
+- (void)gotoLine {
+	NSAlert *a = [[NSAlert alloc] init];
+	a.messageText = @"Goto Line";
 	NSTextField *input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
 	a.accessoryView = input;
-	[a addButtonWithTitle:@"跳转"];
-	[a addButtonWithTitle:@"取消"];
+	[a addButtonWithTitle:@"Goto"];
+	[a addButtonWithTitle:@"Cancel"];
 	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
 		if (r != NSAlertFirstButtonReturn) return;
 		long line = input.stringValue.longLongValue;
 		if (line > 0) {
-			ScintillaView *e = doc.editor;
-			const sptr_t pos = [e message:SCI_POSITIONFROMLINE wParam:line - 1];
-			[e message:SCI_GOTOLINE wParam:line - 1 lParam:0];
-			[e message:SCI_SETSELECTION wParam:pos lParam:pos];
+			[self.document.editor message:SCI_GOTOLINE wParam:line - 1 lParam:0];
+			[self refreshStatus];
 		}
 	}];
 }
-- (void)gotoBrace {
-	ScintillaView *e = self.curEditor;
-	[e message:SCI_BRACEMATCHNEXT wParam:0 lParam:0];
-}
 - (void)bookmarkToggle {
-	ScintillaView *e = self.curEditor;
+	ScintillaView *e = _document.editor;
 	const sptr_t line = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETCURRENTPOS]];
-	[e message:SCI_MARKERDELETE wParam:line lParam:-1];
-	[e message:SCI_MARKERADD wParam:line lParam:1];
+	const sptr_t mark = [e message:SCI_MARKERGET wParam:line];
+	if (mark & 2) [e message:SCI_MARKERDELETE wParam:line lParam:1];
+	else [e message:SCI_MARKERADD wParam:line lParam:1];
 }
 - (void)bookmarkNext {
-	ScintillaView *e = self.curEditor;
+	ScintillaView *e = _document.editor;
 	const sptr_t line = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETCURRENTPOS]];
 	const sptr_t next = [e message:SCI_MARKERNEXT wParam:line + 1 lParam:2];
 	if (next >= 0) [e message:SCI_GOTOLINE wParam:next lParam:0];
+	[self refreshStatus];
 }
-- (void)bookmarkClear {
-	ScintillaView *e = self.curEditor;
-	[e message:SCI_MARKERDELETEALL wParam:1 lParam:0];
+- (void)bookmarkPrev {
+	ScintillaView *e = _document.editor;
+	const sptr_t line = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETCURRENTPOS]];
+	const sptr_t prev = [e message:SCI_MARKERPREVIOUS wParam:line - 1 lParam:2];
+	if (prev >= 0) [e message:SCI_GOTOLINE wParam:prev lParam:0];
+	[self refreshStatus];
 }
+- (void)bookmarkClear { [_document.editor message:SCI_MARKERDELETEALL wParam:1 lParam:0]; }
 
-#pragma mark - 查看动作
+#pragma mark - View
 
-- (void)chooseLexer {
-	// 焦点跳到工具栏词法器选择
-	[self.window makeFirstResponder:_lex];
+- (void)viewWordWrap {
+	_wordWrapItem.state = (_wordWrapItem.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
+	[_document.editor message:SCI_SETWRAPMODE wParam:(_wordWrapItem.state == NSControlStateValueOn) ? SC_WRAP_WORD : SC_WRAP_NONE lParam:0];
 }
-- (void)resetStyle {
-	EditorDocument *doc = self.currentDocument;
-	if (doc) [doc applyLexerForExtension:doc.fileURL.pathExtension.lowercaseString ?: @""];
+- (void)viewIndentGuides {
+	ScintillaView *e = _document.editor;
+	const sptr_t cur = [e message:SCI_GETINDENTATIONGUIDES];
+	[e message:SCI_SETINDENTATIONGUIDES wParam:(cur ? SC_IV_NONE : SC_IV_LOOKBOTH) lParam:0];
 }
-- (void)toggleWrap {
-	_wrapItem.state = (_wrapItem.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
-	ScintillaView *e = self.curEditor;
-	[e message:SCI_SETWRAPMODE wParam:(_wrapItem.state == NSControlStateValueOn) ? SC_WRAP_WORD : SC_WRAP_NONE lParam:0];
-}
-- (void)toggleLineNumbers {
-	_lineNumbersItem.state = (_lineNumbersItem.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
-	ScintillaView *e = self.curEditor;
-	[e message:SCI_SETMARGINWIDTHN wParam:0 lParam:(_lineNumbersItem.state == NSControlStateValueOn) ? 48 : 0];
-}
-- (void)toggleWhitespace {
-	ScintillaView *e = self.curEditor;
+- (void)viewWhitespace {
+	ScintillaView *e = _document.editor;
 	const sptr_t cur = [e message:SCI_GETVIEWWS];
 	[e message:SCI_SETVIEWWS wParam:(cur ? SCWS_INVISIBLE : SCWS_VISIBLEALWAYS) lParam:0];
 }
-- (void)toggleEOLs {
-	ScintillaView *e = self.curEditor;
+- (void)viewEOLs {
+	ScintillaView *e = _document.editor;
 	const sptr_t cur = [e message:SCI_GETVIEWEOL];
 	[e message:SCI_SETVIEWEOL wParam:!cur lParam:0];
 }
-- (void)toggleIndentGuides {
-	_indentItem.state = (_indentItem.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
-	ScintillaView *e = self.curEditor;
-	[e message:SCI_SETINDENTATIONGUIDES wParam:(_indentItem.state == NSControlStateValueOn) ? SC_IV_LOOKBOTH : SC_IV_NONE lParam:0];
+- (void)viewLineNumbers {
+	_lineNumbersItem.state = (_lineNumbersItem.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
+	[_document.editor message:SCI_SETMARGINWIDTHN wParam:0 lParam:(_lineNumbersItem.state == NSControlStateValueOn) ? 48 : 0];
 }
-- (void)zoomIn { [[self curEditor] message:SCI_ZOOMIN wParam:0 lParam:0]; [self refreshStatus]; }
-- (void)zoomOut { [[self curEditor] message:SCI_ZOOMOUT wParam:0 lParam:0]; [self refreshStatus]; }
-- (void)zoomReset { [[self curEditor] message:SCI_SETZOOM wParam:0 lParam:0]; [self refreshStatus]; }
+- (void)viewCodeFolding {
+	ScintillaView *e = _document.editor;
+	const sptr_t cur = [e message:SCI_GETMARGINWIDTHN wParam:2];
+	[e message:SCI_SETMARGINTYPEN wParam:2 lParam:SC_MARGIN_SYMBOL];
+	[e message:SCI_SETMARGINMASKN wParam:2 lParam:SC_MASK_FOLDERS];
+	[e message:SCI_SETMARGINWIDTHN wParam:2 lParam:cur ? 0 : 14];
+	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDER lParam:SC_MARK_BOXPLUS];
+	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDEROPEN lParam:SC_MARK_BOXMINUS];
+	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDERSUB lParam:SC_MARK_VLINE];
+	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDERTAIL lParam:SC_MARK_LCORNER];
+	[e message:SCI_SETPROPERTY wParam:(sptr_t)"fold" lParam:(sptr_t)"1"];
+	[e message:SCI_SETFOLDFLAGS wParam:16 lParam:0];
+}
+- (void)viewZoomIn { [_document.editor message:SCI_ZOOMIN wParam:0 lParam:0]; [self refreshStatus]; }
+- (void)viewZoomOut { [_document.editor message:SCI_ZOOMOUT wParam:0 lParam:0]; [self refreshStatus]; }
+- (void)viewZoomReset { [_document.editor message:SCI_SETZOOM wParam:0 lParam:0]; [self refreshStatus]; }
+- (void)toggleFullScreen { [self.window toggleFullScreen:nil]; }
 - (void)toggleStatusBar {
-	_statusItem.state = (_statusItem.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
-	self.statusBar.hidden = (_statusItem.state == NSControlStateValueOff);
+	_statusBar.hidden = !_statusBar.hidden;
+}
+
+#pragma mark - Scheme
+
+- (void)schemeChoose { [self.window makeFirstResponder:_lexPopup]; }
+- (void)schemeReset {
+	if (_document.fileURL) {
+		[_document applyLexerForExtension:_document.fileURL.pathExtension.lowercaseString];
+		[self refreshStatus];
+	}
+}
+- (void)schemeChanged:(NSPopUpButton *)sender {
+	NSDictionary *info = sender.selectedItem.representedObject;
+	NSString *exts = info[@"extensions"];
+	NSString *first = [[exts componentsSeparatedByString:@";"] firstObject] ?: @"txt";
+	[_document applyLexerForExtension:[first stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
+	[self refreshStatus];
+}
+- (void)themeDefault {}
+- (void)themeDark {}
+
+#pragma mark - Tools
+
+- (void)base64Encode {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *b64 = [[sel dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)b64.UTF8String];
+}
+- (void)base64Decode {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSData *d = [[NSData alloc] initWithBase64EncodedString:sel options:0];
+	NSString *s = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+	if (s) [_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)s.UTF8String];
+}
+- (void)urlEncode {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *s = [sel stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)s.UTF8String];
+}
+- (void)urlDecode {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *s = [sel stringByRemovingPercentEncoding];
+	if (s) [_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)s.UTF8String];
+}
+- (void)helpHome {
+	[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/zufuliu/notepad4"]];
+}
+
+- (void)nyi {
+	NSLog(@"[Notepad4-mac] action not yet implemented");
 }
 
 #pragma mark - NSWindowDelegate
 
 - (BOOL)windowShouldClose:(NSWindow *)sender {
-	for (NSTabViewItem *item in _tabView.tabViewItems) {
-		EditorDocument *doc = item.identifier;
-		if (doc.dirty) {
-			NSAlert *alert = [[NSAlert alloc] init];
-			alert.messageText = [NSString stringWithFormat:@"“%@”有未保存的修改。", doc.tabTitle];
-			alert.informativeText = @"关闭前保存修改吗？";
-			[alert addButtonWithTitle:@"保存"];
-			[alert addButtonWithTitle:@"不保存"];
-			[alert addButtonWithTitle:@"取消"];
-			[alert beginSheetModalForWindow:sender completionHandler:^(NSModalResponse resp) {
-				if (resp == NSAlertFirstButtonReturn) {
-					if ([self saveDocument]) [sender performClose:nil];
-				} else if (resp == NSAlertSecondButtonReturn) {
-					[sender performClose:nil];
-				}
-			}];
-			return NO;
-		}
+	if (_document.dirty) {
+		NSAlert *a = [[NSAlert alloc] init];
+		a.messageText = @"Save changes?";
+		a.informativeText = @"The document has unsaved changes.";
+		[a addButtonWithTitle:@"Save"];
+		[a addButtonWithTitle:@"Don't Save"];
+		[a addButtonWithTitle:@"Cancel"];
+		[a beginSheetModalForWindow:sender completionHandler:^(NSModalResponse r) {
+			if (r == NSAlertFirstButtonReturn) { if ([self fileSave]) [sender performClose:nil]; }
+			else if (r == NSAlertSecondButtonReturn) [sender performClose:nil];
+		}];
+		return NO;
 	}
 	return YES;
 }

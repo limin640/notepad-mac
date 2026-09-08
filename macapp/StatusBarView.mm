@@ -96,14 +96,15 @@ static NSString *FormatCount(long n) {
 	// 选择统计
 	const sptr_t selStart = [e message:SCI_GETSELECTIONSTART];
 	const sptr_t selEnd = [e message:SCI_GETSELECTIONEND];
-	NSString *selPart = @"";
+	NSString *selBytesStr = @"0";
 	if (selEnd > selStart) {
 		const sptr_t selBytes = [e message:SCI_GETSELTEXT] - 1;
-		selPart = [NSString stringWithFormat:@"  (%@)", FormatCount(selBytes)];
+		selBytesStr = FormatCount(selBytes);
 	}
 
-	self.posField.stringValue = [NSString stringWithFormat:@"Ln %@, Col %@  —  %@ lines%@",
-		FormatCount(line + 1), FormatCount(colBytes + 1), FormatCount(lines), selPart];
+	self.posField.stringValue = [NSString stringWithFormat:@"Ln %@ / %@   Col %@   Ch %@   Sel %@",
+		FormatCount(line + 1), FormatCount(lines), FormatCount(colBytes + 1),
+		FormatCount(pos + 1), selBytesStr];
 
 	// 词法器名
 	NSString *lexName = NSLocalizedString(@"普通文本", nil);
