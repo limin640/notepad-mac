@@ -1260,7 +1260,7 @@ void SurfaceImpl::DrawTextTransparent(PRectangle rc, const Font *font_, XYPOSITI
 	if (!style) {
 		return;
 	}
-	CFStringEncoding encoding = EncodingFromCharacterSet(UnicodeMode(), style->getCharacterSet());
+	CFStringEncoding encoding = kCFStringEncodingUTF8;
 
 	CGColorRef color = CGColorCreateGenericRGB(fore.GetRedComponent(),
 						   fore.GetGreenComponent(),
@@ -1282,7 +1282,7 @@ void SurfaceImpl::MeasureWidths(const Font *font_, std::string_view text, XYPOSI
 	if (!style) {
 		return;
 	}
-	CFStringEncoding encoding = EncodingFromCharacterSet(UnicodeMode(), style->getCharacterSet());
+	CFStringEncoding encoding = kCFStringEncodingUTF8;
 	QuartzTextLayout layoutMeasure(text, encoding, style);
 	const CFStringEncoding encodingUsed = layoutMeasure.getEncoding();
 
@@ -1345,7 +1345,7 @@ XYPOSITION SurfaceImpl::WidthText(const Font *font_, std::string_view text) {
 	if (!style) {
 		return 1;
 	}
-	CFStringEncoding encoding = EncodingFromCharacterSet(UnicodeMode(), style->getCharacterSet());
+	CFStringEncoding encoding = kCFStringEncodingUTF8;
 	QuartzTextLayout layoutMeasure(text, encoding, style);
 
 	return static_cast<XYPOSITION>(layoutMeasure.MeasureStringWidth());

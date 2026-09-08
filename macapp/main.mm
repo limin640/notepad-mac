@@ -48,6 +48,7 @@ int main(int argc, const char *argv[]) {
 				}
 				[doc applyLexerForExtension:ext];
 				[controller refreshStatus];
+				NSLog(@"[diag] codepage=%ld len=%ld", (long)[doc.editor message:SCI_GETCODEPAGE], (long)[doc.editor message:SCI_GETLENGTH]);
 				if (needle.length) {
 					// 模拟 ⌘F 面板查找（直接走 target 搜索）
 					ScintillaView *e = doc.editor;

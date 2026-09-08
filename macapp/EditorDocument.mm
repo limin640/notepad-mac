@@ -88,6 +88,9 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	_editor = [[ScintillaView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)];
 	_editor.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	// 基础编辑体验：行号边距 + 等宽字体 + Tab 宽 4
+	[_editor message:SCI_SETCODEPAGE wParam:SC_CP_UTF8 lParam:0];
+	// 全样式字符集设 UTF-8（fork 需要：StyleSetCharacterSet）
+	[_editor setGeneralProperty:SCI_STYLESETCHARACTERSET parameter:STYLE_DEFAULT value:SC_CHARSET_DEFAULT];
 	[_editor message:SCI_SETMARGINTYPEN wParam:0 lParam:SC_MARGIN_NUMBER];
 	[_editor message:SCI_SETMARGINWIDTHN wParam:0 lParam:48];
 	[_editor setGeneralProperty:SCI_SETUSETABS value:NO];
