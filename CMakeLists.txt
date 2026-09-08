@@ -94,4 +94,13 @@ set_target_properties(Notepad4 PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
     MACOSX_BUNDLE_INFO_STRING "Notepad4 for macOS"
+    MACOSX_BUNDLE_ICON_FILE "Notepad4.icns"
+    MACOSX_BUNDLE_LONG_VERSION_STRING "0.1.0 (Notepad4-mac port)"
 )
+# 图标拷入 bundle
+add_custom_command(TARGET Notepad4 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/macapp/Resources/Notepad4.icns"
+        "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/Notepad4.icns"
+    COMMAND touch "$<TARGET_BUNDLE_DIR:Notepad4>"
+    COMMENT "Copying app icon")
