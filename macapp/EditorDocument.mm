@@ -2,76 +2,17 @@
 #import "SciLexer.h"
 #import "ILexer.h"
 #import "LexerModule.h"
-
-#import <unordered_map>
-
-// 扩展名 -> SCLEX_* 词法器（常用子集；完整映射后续接入 EditLexer 表）
-static const std::unordered_map<NSString *, int> gLexerByExt = {
-	{@"cpp", SCLEX_CPP}, {@"cxx", SCLEX_CPP}, {@"cc", SCLEX_CPP}, {@"c", SCLEX_CPP},
-	{@"h", SCLEX_CPP}, {@"hpp", SCLEX_CPP}, {@"hh", SCLEX_CPP}, {@"hxx", SCLEX_CPP},
-	{@"m", SCLEX_CPP}, {@"mm", SCLEX_CPP},
-	{@"swift", SCLEX_SWIFT},
-	{@"go", SCLEX_GO},
-	{@"rs", SCLEX_RUST},
-	{@"py", SCLEX_PYTHON}, {@"pyw", SCLEX_PYTHON},
-	{@"rb", SCLEX_RUBY},
-	{@"js", SCLEX_JAVASCRIPT}, {@"mjs", SCLEX_JAVASCRIPT}, {@"jsx", SCLEX_JAVASCRIPT},
-	{@"ts", SCLEX_JAVASCRIPT}, {@"tsx", SCLEX_JAVASCRIPT},
-	{@"java", SCLEX_JAVA},
-	{@"cs", SCLEX_CSHARP},
-	{@"sh", SCLEX_BASH}, {@"bash", SCLEX_BASH}, {@"zsh", SCLEX_BASH},
-	{@"json", SCLEX_JSON},
-	{@"xml", SCLEX_XML}, {@"html", SCLEX_HTML}, {@"htm", SCLEX_HTML}, {@"svg", SCLEX_XML},
-	{@"css", SCLEX_CSS},
-	{@"md", SCLEX_MARKDOWN}, {@"markdown", SCLEX_MARKDOWN},
-	{@"sql", SCLEX_SQL},
-	{@"yaml", SCLEX_YAML}, {@"yml", SCLEX_YAML},
-	{@"toml", SCLEX_TOML},
-	{@"cmake", SCLEX_CMAKE}, {@"mk", SCLEX_MAKEFILE},
-	{@"ini", SCLEX_PROPERTIES}, {@"cfg", SCLEX_PROPERTIES}, {@"conf", SCLEX_PROPERTIES},
-	{@"tex", SCLEX_LATEX},
-	{@"lua", SCLEX_LUA},
-	{@"php", SCLEX_PHPSCRIPT},
-	{@"vim", SCLEX_VIM},
-	{@"pl", SCLEX_PERL}, {@"pm", SCLEX_PERL},
-	{@"bat", SCLEX_BATCH}, {@"cmd", SCLEX_BATCH},
-	{@"ps1", SCLEX_POWERSHELL},
-	{@"asm", SCLEX_ASM}, {@"s", SCLEX_ASM},
-	{@"d", SCLEX_DLANG},
-	{@"zig", SCLEX_ZIG},
-	{@"txt", SCLEX_NULL},
-};
+#import "LexerPalettes.h"
+#import "LexerRegistry.h"
+#import "EditLexer.h"
+#include <string>
+#include "Sci_Position.h"
+#include <vector>
+#include <cstring>
 
 
-// 通用浅色主题（对齐 notepad4 默认 C 配色核心）
-static void ApplyDefaultPalette(ScintillaView *e) {
-	// C 系（cpp/objc/java/js/ts/csharp 等 SCE_C_* 共用编号体系）
-	struct StyleColor { int style; const char *fore; BOOL italic; };
-	static const StyleColor cColors[] = {
-		{SCE_C_COMMENT,       "#008000", YES},
-		{SCE_C_COMMENTLINE,   "#008000", YES},
-		{SCE_C_COMMENTDOC,    "#008000", YES},
-		{SCE_C_COMMENTLINEDOC,"#008000", YES},
-		{SCE_C_WORD,          "#0000FF", NO},
-		{SCE_C_WORD2,         "#0000FF", NO},
-		{SCE_C_PREPROCESSOR,  "#804000", NO},
-		{SCE_C_DIRECTIVE,     "#804000", NO},
-		{SCE_C_STRING,        "#A31515", NO},
-		{SCE_C_CHARACTER,     "#A31515", NO},
-		{SCE_C_STRINGRAW,     "#A31515", NO},
-		{SCE_C_STRINGEOL,     "#A31515", NO},
-		{SCE_C_ESCAPECHAR,    "#A31515", NO},
-		{SCE_C_NUMBER,        "#B8860B", NO},
-		{SCE_C_OPERATOR,      "#404040", NO},
-		{SCE_C_IDENTIFIER,    "#000000", NO},
-	};
-	for (const auto &sc : cColors) {
-		[e setColorProperty:SCI_STYLESETFORE parameter:sc.style fromHTML:@(sc.fore)];
-		if (sc.italic) {
-			[e setGeneralProperty:SCI_STYLESETITALIC parameter:sc.style value:sc.italic];
-		}
-	}
-}
+// 旧 ext->SCLEX 兜底映射已由 LexerRegistry（90 词法器全量）替代
+
 
 static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) {
 	// BOM 检测
@@ -113,6 +54,9 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 @implementation EditorDocument {
 	NSString *_usedEncoding;
 	BOOL _dirty;
+	NSData *_rawBytes; // 打开时的原始字节（供重解码）
+	NSArray<NSString *> *_keywordsForAutoc; // 词表缓存（自动补全）
+	const EDITLEXER *_currentLexer;
 }
 
 - (instancetype)initWithNewUntitled:(NSInteger)sequence {
@@ -152,6 +96,10 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	[_editor setStringProperty:SCI_STYLESETFONT parameter:STYLE_DEFAULT value:@"Menlo"];
 	[_editor setGeneralProperty:SCI_STYLESETSIZE parameter:STYLE_DEFAULT value:13];
 	[_editor message:SCI_STYLECLEARALL wParam:0 lParam:0];
+	// 自动补全：单字符触发，忽略大小写，取消按键 Esc
+	[_editor message:SCI_AUTOCSETIGNORECASE wParam:1 lParam:0];
+	[_editor message:SCI_AUTOCSETCANCELATSTART wParam:1 lParam:0];
+	[_editor message:SCI_AUTOCSETDROPRESTOFWORD wParam:1 lParam:0];
 	// 修改标记：SCN_SAVEPOINTLEFT -> dirty
 	_editor.delegate = self;
 }
@@ -164,7 +112,57 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	} else if (scn->nmhdr.code == SCN_SAVEPOINTREACHED) {
 		_dirty = NO;
 		[[NSNotificationCenter defaultCenter] postNotificationName:@"EditorDocumentDirtyChanged" object:self];
+	} else if (scn->nmhdr.code == SCN_CHARADDED) {
+		[self onCharAdded:scn->ch];
+	} else if (scn->nmhdr.code == SCN_AUTOCSELECTION) {
+		// 列表选择完成
 	}
+}
+
+- (void)onCharAdded:(int)ch {
+	// 字母/数字/下划线且非自动补全激活时，从词表补全
+	if (![self autocEnabled]) return;
+	if ([_editor message:SCI_AUTOCACTIVE wParam:0 lParam:0]) return;
+	if (!isalnum(ch) && ch != '_') return;
+	const sptr_t pos = [_editor message:SCI_GETCURRENTPOS];
+	const sptr_t wordStart = [_editor message:SCI_WORDSTARTPOSITION wParam:pos lParam:YES];
+	const sptr_t len = pos - wordStart;
+	if (len < 2 || len > 64) return;
+	NSString *root = [self editorStringFrom:wordStart length:len];
+	NSArray *cands = [self autocompleteCandidates:root];
+	if (cands.count >= 1) {
+		NSString *list = [cands componentsJoinedByString:@" "];
+		[_editor message:SCI_AUTOCSHOW wParam:len lParam:(sptr_t)list.UTF8String];
+	}
+}
+
+- (BOOL)autocEnabled {
+	return _keywordsForAutoc != nil;
+}
+
+- (NSString *)editorStringFrom:(sptr_t)start length:(sptr_t)len {
+	struct TextRangeFull {
+		long cpMin, cpMax;
+		char *lpstrText;
+	};
+	std::vector<char> buf(len + 1);
+	TextRangeFull tr{static_cast<long>(start), static_cast<long>(start + len), buf.data()};
+	[_editor message:SCI_GETTEXTRANGEFULL wParam:0 lParam:(sptr_t)&tr];
+	return [NSString stringWithUTF8String:buf.data()];
+}
+
+- (NSArray *)autocompleteCandidates:(NSString *)root {
+	NSMutableArray *out = [NSMutableArray array];
+	NSString *lower = root.lowercaseString;
+	for (NSString *kw in _keywordsForAutoc) {
+		if (kw.length > root.length) {
+			NSString *prefix = [kw.lowercaseString substringToIndex:root.length];
+			if ([prefix isEqualToString:lower]) {
+				[out addObject:kw];
+			}
+		}
+	}
+	return out;
 }
 
 - (BOOL)loadFromURL:(NSURL *)url error:(NSError **)error {
@@ -176,6 +174,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	}
 	NSString *enc = nil;
 	NSString *text = DetectEncodingAndDecode(data, &enc);
+	_rawBytes = data;
 	if (!text) {
 		if (error) {
 			*error = [NSError errorWithDomain:@"Notepad4Mac" code:1
@@ -210,6 +209,10 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	 data = md;
 	} else if ([_usedEncoding isEqualToString:@"GB18030"]) {
 	 data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000)];
+	} else if ([_usedEncoding isEqualToString:@"BIG5"]) {
+	 data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingBig5)];
+	} else if ([_usedEncoding isEqualToString:@"Shift-JIS"]) {
+	 data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingShiftJIS)];
 	} else {
 	 data = [text dataUsingEncoding:NSISOLatin1StringEncoding];
 	}
@@ -233,16 +236,90 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 }
 
 - (void)applyLexerForExtension:(NSString *)ext {
-	const auto it = gLexerByExt.find(ext);
-	const int lexer = (it != gLexerByExt.end()) ? it->second : SCLEX_NULL;
-	[_editor setGeneralProperty:SCI_SETLEXER value:lexer];
-	ApplyDefaultPalette(_editor);
-	// 强制重着色
-	[_editor message:SCI_COLOURISE wParam:0 lParam:-1];
+	const EDITLEXER *lex = [LexerRegistry lexerForExtension:ext];
+	if (lex) {
+		[LexerRegistry applyLexer:lex toEditor:_editor];
+		// 缓存词表给自动补全（词集0 = 关键字）
+		NSMutableArray *kws = [NSMutableArray array];
+		for (unsigned i = 0; i < lex->keywordCount && i < 9; i++) {
+			const char *kw = lex->pszKeyWords[i];
+			if (kw && *kw) {
+				[[NSString stringWithUTF8String:kw] enumerateSubstringsInRange:NSMakeRange(0, strlen(kw))
+					options:NSStringEnumerationByWords
+					usingBlock:^(NSString *word, NSRange, NSRange, BOOL *stop) {
+						if (word.length > 1) [kws addObject:word];
+					}];
+			}
+		}
+		_keywordsForAutoc = kws.count ? kws : nil;
+		_currentLexer = lex;
+	} else {
+		// 未注册扩展：纯文本
+		[_editor setGeneralProperty:SCI_SETLEXER value:SCLEX_NULL];
+		[_editor message:SCI_COLOURISE wParam:0 lParam:-1];
+	}
 }
 
 - (BOOL)dirty {
 	return _dirty;
+}
+
+- (void)reloadWithEncoding:(NSString *)encodingName {
+	NSString *enc = nil;
+	NSString *text = nil;
+	if (_rawBytes) {
+		if ([encodingName isEqualToString:@"UTF-8"]) {
+			enc = @"UTF-8";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:NSUTF8StringEncoding];
+			if (!text && _rawBytes.length >= 3) {
+				const UInt8 *b = static_cast<const UInt8 *>(_rawBytes.bytes);
+				if (b[0]==0xEF && b[1]==0xBB && b[2]==0xBF) {
+					text = [[NSString alloc] initWithData:[_rawBytes subdataWithRange:NSMakeRange(3,_rawBytes.length-3)] encoding:NSUTF8StringEncoding];
+				}
+			}
+		} else if ([encodingName isEqualToString:@"UTF-16LE"]) {
+			enc = @"UTF-16LE";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:NSUTF16LittleEndianStringEncoding];
+		} else if ([encodingName isEqualToString:@"UTF-16BE"]) {
+			enc = @"UTF-16BE";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:NSUTF16BigEndianStringEncoding];
+		} else if ([encodingName isEqualToString:@"GBK"]) {
+			enc = @"GB18030";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000)];
+		} else if ([encodingName isEqualToString:@"BIG5"]) {
+			enc = @"BIG5";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingBig5)];
+		} else if ([encodingName isEqualToString:@"Shift-JIS"]) {
+			enc = @"Shift-JIS";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingShiftJIS)];
+		} else if ([encodingName isEqualToString:@"Latin-1"]) {
+			enc = @"Latin-1";
+			text = [[NSString alloc] initWithData:_rawBytes encoding:NSISOLatin1StringEncoding];
+		}
+	}
+	if (text) {
+		_usedEncoding = enc;
+		[_editor message:SCI_SETTEXT wParam:0 lParam:(sptr_t)text.UTF8String];
+		[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+	}
+}
+
+- (void)setSaveEncoding:(NSString *)encodingName {
+	if ([encodingName isEqualToString:@"UTF-8"]) _usedEncoding = @"UTF-8";
+	else if ([encodingName isEqualToString:@"UTF-16LE"]) _usedEncoding = @"UTF-16LE";
+	else if ([encodingName isEqualToString:@"UTF-16BE"]) _usedEncoding = @"UTF-16BE";
+	else if ([encodingName isEqualToString:@"GBK"]) _usedEncoding = @"GB18030";
+	else if ([encodingName isEqualToString:@"BIG5"]) _usedEncoding = @"BIG5";
+	else if ([encodingName isEqualToString:@"Shift-JIS"]) _usedEncoding = @"Shift-JIS";
+	else if ([encodingName isEqualToString:@"Latin-1"]) _usedEncoding = @"Latin-1";
+}
+
+- (NSString *)currentEncoding {
+	return _usedEncoding;
+}
+
+- (const EDITLEXER *)currentLexer {
+	return _currentLexer;
 }
 
 - (NSString *)windowTitle {

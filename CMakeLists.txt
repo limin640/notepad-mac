@@ -40,6 +40,14 @@ target_include_directories(scintilla PUBLIC
 file(GLOB LEXER_SRCS "${SCI_ROOT}/lexers/*.cxx" "${SCI_ROOT}/lexlib/*.cxx")
 target_sources(scintilla PRIVATE ${LEXER_SRCS})
 
+
+# notepad4 词法器数据（词表+样式，纯数据模块）
+file(GLOB LEXDEF_SRCS "${CMAKE_SOURCE_DIR}/lexers_def/stl*.cpp")
+add_library(lexers_def STATIC ${LEXDEF_SRCS})
+target_include_directories(lexers_def PUBLIC
+    "${CMAKE_SOURCE_DIR}/lexers_def"
+    "${SCI_ROOT}/include"
+)
 find_library(APPKIT_F AppKit REQUIRED)
 find_library(QUARTZCORE_F QuartzCore REQUIRED)
 find_library(CARBON_F Carbon REQUIRED)
@@ -62,15 +70,24 @@ add_executable(Notepad4 MACOSX_BUNDLE
     macapp/main.mm
     macapp/MainWindowController.mm
     macapp/EditorDocument.mm
+    macapp/LexerRegistry.mm
+    macapp/FindReplacePanel.mm
+    macapp/StatusBarView.mm
+)
+set_source_files_properties(
+    macapp/main.mm macapp/MainWindowController.mm macapp/EditorDocument.mm
+    macapp/LexerRegistry.mm macapp/FindReplacePanel.mm macapp/StatusBarView.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
 )
 target_include_directories(Notepad4 PRIVATE
+    "${CMAKE_SOURCE_DIR}/lexers_def"
     "${SCI_ROOT}/include"
     "${SCI_ROOT}/src"
     "${SCI_ROOT}/cocoa"
     "${SCI_ROOT}/lexlib"
     ${CMAKE_SOURCE_DIR}/macapp
 )
-target_link_libraries(Notepad4 PRIVATE scintilla)
+target_link_libraries(Notepad4 PRIVATE scintilla lexers_def)
 set_target_properties(Notepad4 PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "Notepad4"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.ethan.notepad4mac"

@@ -1,6 +1,8 @@
 #import <Cocoa/Cocoa.h>
 #import "ScintillaView.h"
 
+struct EDITLEXER;
+
 @interface EditorDocument : NSObject <ScintillaNotificationProtocol>
 
 @property (nonatomic, strong, readonly) ScintillaView *editor;
@@ -16,6 +18,12 @@
 - (BOOL)saveToURL:(NSURL *)url error:(NSError * _Nullable * _Nullable)error;
 
 - (void)applyLexerForExtension:(nullable NSString *)ext;
+
+// 编码：重解码（保留未保存修改则确认丢弃）/ 设保存编码
+- (void)reloadWithEncoding:(NSString *)encodingName;
+- (void)setSaveEncoding:(NSString *)encodingName;
+- (NSString *)currentEncoding;
+@property (nonatomic, readonly, nullable) const EDITLEXER *currentLexer;
 - (NSString *)windowTitle;
 
 @end

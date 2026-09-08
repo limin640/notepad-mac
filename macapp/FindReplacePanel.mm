@@ -1,0 +1,219 @@
+#import "FindReplacePanel.h"
+#import "EditorDocument.h"
+#import "ScintillaView.h"
+#import "Scintilla.h"
+
+@interface FindReplacePanel () <NSSearchFieldDelegate, NSTextFieldDelegate>
+@end
+
+// Scintilla 正则 flag（SCFIND_REGEXP 等在 Scintilla.h）
+@interface FindReplacePanel ()
+
+@property (nonatomic, strong) NSSearchField *findField;
+@property (nonatomic, strong) NSTextField *replaceField;
+@property (nonatomic, strong) NSButton *caseCheck;
+@property (nonatomic, strong) NSButton *wordCheck;
+@property (nonatomic, strong) NSButton *regexCheck;
+@property (nonatomic, strong) NSStackView *replaceRow;
+@property (nonatomic, unsafe_unretained) NSWindow *hostWindow;
+
+@end
+
+@implementation FindReplacePanel
+
+- (instancetype)initWithFrame:(NSRect)frame {
+	self = [super initWithFrame:frame];
+	if (self) {
+		[self buildUI];
+		self.hidden = YES;
+	}
+	return self;
+}
+
+- (void)buildUI {
+	self.wantsLayer = YES;
+	self.layer.backgroundColor = [[NSColor controlBackgroundColor] colorWithAlphaComponent:0.98].CGColor;
+
+	NSStackView *stack = [NSStackView stackViewWithViews:@[]];
+	stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+	stack.alignment = NSLayoutAttributeLeading;
+	stack.edgeInsets = NSEdgeInsetsMake(8, 12, 8, 12);
+	stack.spacing = 6;
+	stack.translatesAutoresizingMaskIntoConstraints = NO;
+	[self addSubview:stack];
+	[self.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor].active = YES;
+	[self.trailingAnchor constraintEqualToAnchor:stack.trailingAnchor].active = YES;
+	[self.topAnchor constraintEqualToAnchor:stack.topAnchor].active = YES;
+	[self.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor].active = YES;
+
+	// 查找行
+	self.findField = [[NSSearchField alloc] init];
+	self.findField.placeholderString = @"查找";
+	self.findField.delegate = self;
+	self.findField.translatesAutoresizingMaskIntoConstraints = NO;
+	[self.findField.widthAnchor constraintEqualToConstant:320].active = YES;
+
+	self.caseCheck = [NSButton checkboxWithTitle:@"区分大小写" target:self action:@selector(refind:)];
+	self.wordCheck = [NSButton checkboxWithTitle:@"全字匹配" target:self action:@selector(refind:)];
+	self.regexCheck = [NSButton checkboxWithTitle:@"正则 ⌥⌘R" target:self action:@selector(refind:)];
+
+	NSButton *prevBtn = [NSButton buttonWithTitle:@"上一个" target:self action:@selector(prev:)];
+	NSButton *nextBtn = [NSButton buttonWithTitle:@"下一个" target:self action:@selector(next:)];
+	nextBtn.keyEquivalent = @"\r";
+
+	NSStackView *row1 = [NSStackView stackViewWithViews:@[self.findField, prevBtn, nextBtn,
+		self.caseCheck, self.wordCheck, self.regexCheck]];
+	row1.spacing = 8;
+
+	// 替换行
+	self.replaceField = [[NSTextField alloc] init];
+	self.replaceField.placeholderString = @"替换为";
+	self.replaceField.translatesAutoresizingMaskIntoConstraints = NO;
+	[self.replaceField.widthAnchor constraintEqualToConstant:320].active = YES;
+
+	NSButton *repOne = [NSButton buttonWithTitle:@"替换" target:self action:@selector(replaceOne:)];
+	NSButton *repAll = [NSButton buttonWithTitle:@"全部替换" target:self action:@selector(replaceAll:)];
+	self.replaceRow = [NSStackView stackViewWithViews:@[self.replaceField, repOne, repAll]];
+	self.replaceRow.spacing = 8;
+
+	[stack addArrangedSubview:row1];
+	[stack addArrangedSubview:self.replaceRow];
+	for (NSView *v in stack.arrangedSubviews) { [stack setVisibilityPriority:NSStackViewVisibilityPriorityMustHold forView:v]; }
+}
+
+- (void)attachToWindow:(NSWindow *)window {
+	self.hostWindow = window;
+	self.translatesAutoresizingMaskIntoConstraints = NO;
+	[window.contentView addSubview:self positioned:NSWindowBelow relativeTo:nil];
+	[self.widthAnchor constraintEqualToAnchor:window.contentView.widthAnchor].active = YES;
+	[self.heightAnchor constraintEqualToConstant:84].active = YES;
+	// 底部贴边（显示时编辑区让位由主控制器处理）
+
+	[self.leadingAnchor constraintEqualToAnchor:window.contentView.leadingAnchor].active = YES;
+	self.hidden = YES;
+}
+
+- (void)showFind:(BOOL)replaceVisible {
+	self.hidden = NO;
+	self.replaceRow.hidden = !replaceVisible;
+	[self.findField.window makeFirstResponder:self.findField];
+}
+
+- (void)toggle {
+	if (self.hidden) {
+		[self showFind:NO];
+	} else {
+		self.hidden = YES;
+		[self.hostWindow makeFirstResponder:nil];
+	}
+}
+
+#pragma mark - 搜索执行
+
+- (int)searchFlags {
+	int flags = 0;
+	if (self.caseCheck.state == NSControlStateValueOn) flags |= SCFIND_MATCHCASE;
+	if (self.wordCheck.state == NSControlStateValueOn) flags |= SCFIND_WHOLEWORD;
+	if (self.regexCheck.state == NSControlStateValueOn) flags |= SCFIND_REGEXP;
+	return flags;
+}
+
+- (void)refind:(id)sender {
+	// 参数变化即重新定位当前命中
+	NSWindow *win = self.hostWindow;
+	NSResponder *fr = [win firstResponder];
+	if ([fr isKindOfClass:[SCIContentView class]]) {
+		SCIContentView *cv = (SCIContentView *)fr;
+		// 通过 ScintillaView 找回文档逻辑简化：主控制器持有
+	}
+}
+
+- (void)next:(id)sender {
+	[self.hostWindow.windowController tryToPerform:@selector(findNextNext:) with:sender];
+}
+
+- (void)prev:(id)sender {
+	[self.hostWindow.windowController tryToPerform:@selector(findNextPrev:) with:sender];
+}
+
+- (void)replaceOne:(EditorDocument *)doc {
+	NSString *find = self.findField.stringValue;
+	NSString *repl = self.replaceField.stringValue;
+	if (!find.length) return;
+	// 覆盖当前选区（已是命中区）再找下一个
+	[doc.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)repl.UTF8String];
+	[self findInDoc:doc backwards:NO];
+}
+
+- (void)replaceAll:(EditorDocument *)doc {
+	NSString *find = self.findField.stringValue;
+	NSString *repl = self.replaceField.stringValue;
+	if (!find.length) return;
+	const int flags = [self searchFlags];
+	[doc.editor message:SCI_TARGETFROMSELECTION wParam:0 lParam:0];
+	// 循环替换整个文档：从头 target
+	[doc.editor message:SCI_SETSEARCHFLAGS wParam:flags lParam:0];
+	[doc.editor message:SCI_SETTARGETSTART wParam:0 lParam:0];
+	[doc.editor message:SCI_SETTARGETEND wParam:(sptr_t)[doc.editor message:SCI_GETLENGTH] lParam:0];
+	long total = 0;
+	sptr_t pos = 0;
+	const char *findC = find.UTF8String;
+	const char *replC = repl.UTF8String;
+	while (pos >= 0) {
+		[doc.editor message:SCI_SETTARGETSTART wParam:pos lParam:0];
+		[doc.editor message:SCI_SETTARGETEND wParam:(sptr_t)[doc.editor message:SCI_GETLENGTH] lParam:0];
+		const sptr_t found = [doc.editor message:SCI_SEARCHINTARGET wParam:find.length lParam:(sptr_t)findC];
+		if (found < 0) break;
+		[doc.editor message:SCI_REPLACETARGET wParam:(repl.length ? strlen(replC) : 0) lParam:(sptr_t)replC];
+		total++;
+		pos = [doc.editor message:SCI_GETTARGETEND wParam:0 lParam:0];
+		if (pos >= (sptr_t)[doc.editor message:SCI_GETLENGTH]) break;
+	}
+	// 汇报
+	NSAlert *a = [[NSAlert alloc] init];
+	a.messageText = total ? [NSString stringWithFormat:@"已替换 %ld 处", total] : @"未找到匹配";
+	[a runModal];
+}
+
+- (void)findInDoc:(EditorDocument *)doc backwards:(BOOL)backwards {
+	NSString *find = self.findField.stringValue;
+	if (!find.length) return;
+	const int flags = [self searchFlags];
+	ScintillaView *e = doc.editor;
+	const sptr_t len = [e message:SCI_GETLENGTH];
+	sptr_t start = [e message:SCI_GETSELECTIONEND];
+	sptr_t end = len;
+	if (backwards) {
+		start = [e message:SCI_GETSELECTIONSTART];
+		end = 0;
+	}
+	[e message:SCI_SETSEARCHFLAGS wParam:flags lParam:0];
+	[e message:SCI_SETTARGETSTART wParam:start lParam:0];
+	[e message:SCI_SETTARGETEND wParam:end lParam:0];
+	const sptr_t found = [e message:SCI_SEARCHINTARGET wParam:find.length lParam:(sptr_t)find.UTF8String];
+	if (found >= 0) {
+		const sptr_t fEnd = [e message:SCI_GETTARGETEND];
+		[e message:SCI_SETSELECTION wParam:found lParam:fEnd];
+		[e message:SCI_SCROLLCARET wParam:0 lParam:0];
+	} else if (!backwards && start > 0) {
+		// wrap 到头重找
+		[e message:SCI_SETTARGETSTART wParam:0 lParam:0];
+		[e message:SCI_SETTARGETEND wParam:len lParam:0];
+		const sptr_t f2 = [e message:SCI_SEARCHINTARGET wParam:find.length lParam:(sptr_t)find.UTF8String];
+		if (f2 >= 0) {
+			const sptr_t f2e = [e message:SCI_GETTARGETEND];
+			[e message:SCI_SETSELECTION wParam:f2 lParam:f2e];
+			[e message:SCI_SCROLLCARET wParam:0 lParam:0];
+		}
+	}
+}
+
+- (void)findNext:(EditorDocument *)doc {
+	[self findInDoc:doc backwards:NO];
+}
+
+- (void)findPrevious:(EditorDocument *)doc {
+	[self findInDoc:doc backwards:YES];
+}
+
+@end

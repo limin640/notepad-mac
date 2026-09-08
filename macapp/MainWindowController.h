@@ -9,6 +9,7 @@
 - (BOOL)saveDocument;
 - (BOOL)saveDocumentAs;
 - (void)closeTab;
+- (void)refreshStatus;
 - (nullable EditorDocument *)currentDocument;
 
 @end

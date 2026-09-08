@@ -131,8 +131,8 @@ EditModel::EditModel() :
 #endif
 	idleTaskTimer = CreateWaitableTimer(nullptr, true, nullptr);
 #else
-	// macOS port: std 线程数 + chrono 到期时间戳
-	hardwareConcurrency = std::max(1u, std::thread::hardware_concurrency());
+	// macOS port: Quartz surface 非线程安全，禁用并行布局（恒主线程）
+	hardwareConcurrency = 1;
 	idleTaskTimer = nullptr;
 #endif
 	SetIdleTaskTime(IdleLineWrapTime);
