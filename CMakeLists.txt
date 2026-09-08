@@ -1,0 +1,62 @@
+cmake_minimum_required(VERSION 3.20)
+project(Notepad4Mac OBJCXX CXX C)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_OBJCXX_STANDARD 20)
+
+# ---------------------------------------------------------------------------
+# Scintilla 内核 + 官方 Cocoa 后端（5.6.6，与 notepad4 fork 同版本零漂移）
+# ---------------------------------------------------------------------------
+set(SCI_ROOT "${CMAKE_SOURCE_DIR}/scintilla_upstream")
+
+# 平台无关内核
+file(GLOB SCI_CORE_SRCS "${SCI_ROOT}/src/*.cxx")
+
+# Cocoa 平台层（官方 scintilla 5.6.6 cocoa/）
+set(SCI_COCOA_SRCS
+    "${SCI_ROOT}/cocoa/PlatCocoa.mm"
+    "${SCI_ROOT}/cocoa/ScintillaCocoa.mm"
+    "${SCI_ROOT}/cocoa/ScintillaView.mm"
+    "${SCI_ROOT}/cocoa/PortMacOSBatch.mm"
+)
+
+set_source_files_properties(${SCI_COCOA_SRCS} PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+
+add_library(scintilla STATIC ${SCI_CORE_SRCS} ${SCI_COCOA_SRCS})
+
+
+target_compile_definitions(scintilla PRIVATE
+    USE_STD_ASYNC_FUTURE=1
+    USE_WIN32_PTP_WORK=0
+)
+target_include_directories(scintilla PUBLIC
+    "${SCI_ROOT}/include"
+    "${SCI_ROOT}/src"
+    "${SCI_ROOT}/cocoa"
+    "${SCI_ROOT}/lexlib"
+)
+
+# 词法器（notepad4 fork 内置 lexers/ + lexlib 目录）
+file(GLOB LEXER_SRCS "${SCI_ROOT}/lexers/*.cxx" "${SCI_ROOT}/lexlib/*.cxx")
+target_sources(scintilla PRIVATE ${LEXER_SRCS})
+
+find_library(APPKIT_F AppKit REQUIRED)
+find_library(QUARTZCORE_F QuartzCore REQUIRED)
+find_library(CARBON_F Carbon REQUIRED)
+
+target_link_libraries(scintilla PUBLIC
+    ${APPKIT_F}
+    ${QUARTZCORE_F}
+    ${CARBON_F}
+)
+
+# ---------------------------------------------------------------------------
+# 目标 1：Scintilla Cocoa 测试程序（验证内核+cocoa 后端编译链接通过）
+# ---------------------------------------------------------------------------
+add_executable(sci_test tests/sci_test.mm)
+target_link_libraries(sci_test PRIVATE scintilla)
+
+# ---------------------------------------------------------------------------
+# 目标 2：Notepad4.app（后续迭代）
+# ---------------------------------------------------------------------------
+# add_executable(Notepad4 MACOSX_BUNDLE ...)
