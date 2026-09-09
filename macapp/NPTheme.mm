@@ -57,7 +57,10 @@ void NPApplyTheme(ScintillaView *e, NPThemeKind kind, const EDITLEXER *lex) {
 	[e message:SCI_SETVIEWWS wParam:SCWS_INVISIBLE lParam:0];
 	[e message:SCI_SETVIEWEOL wParam:0 lParam:0];
 
-	// 6. 折叠标记（Box tree，fore/back 来自 FoldingMarker 样式）
+		// 折叠边距背景：默认取平台 chrome 色（浅灰棋盘），必须覆盖为文档背景
+	// 对照 Styles.cpp:1674-1675 SetFoldMarginColor/SetFoldMarginHiColor
+	[e message:SCI_SETFOLDMARGINCOLOUR wParam:1 lParam:ScRGB(c->defBack)];
+	[e message:SCI_SETFOLDMARGINHICOLOUR wParam:1 lParam:ScRGB(c->defBack)];
 	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDEROPEN lParam:SC_MARK_BOXMINUS];
 	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDER lParam:SC_MARK_BOXPLUS];
 	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDERSUB lParam:SC_MARK_VLINE];
@@ -65,9 +68,10 @@ void NPApplyTheme(ScintillaView *e, NPThemeKind kind, const EDITLEXER *lex) {
 	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDEREND lParam:SC_MARK_BOXPLUSCONNECTED];
 	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDEROPENMID lParam:SC_MARK_BOXMINUSCONNECTED];
 	[e message:SCI_MARKERDEFINE wParam:SC_MARKNUM_FOLDERMIDTAIL lParam:SC_MARK_TCORNER];
+	// 对照 Styles.cpp: MarkerSetBack(foreColor) / MarkerSetFore(backColor)
 	for (int m = SC_MARKNUM_FOLDEREND; m <= SC_MARKNUM_FOLDEROPEN; m++) {
-		[e message:SCI_MARKERSETFORETRANSLUCENT wParam:m lParam:ScRGBA(c->foldFore, 0xFF)];
-		[e message:SCI_MARKERSETBACKTRANSLUCENT wParam:m lParam:ScRGBA(c->foldBack, 0xFF)];
+		[e message:SCI_MARKERSETBACKTRANSLUCENT wParam:m lParam:ScRGBA(c->foldFore, 0xFF)];
+		[e message:SCI_MARKERSETFORETRANSLUCENT wParam:m lParam:ScRGBA(c->foldBack, 0xFF)];
 	}
 	[e message:SCI_MARKERSETFORETRANSLUCENT wParam:SC_MARKNUM_FOLDERSUB lParam:ScRGBA(c->foldLine, 0xFF)];
 	[e message:SCI_MARKERSETBACKTRANSLUCENT wParam:SC_MARKNUM_FOLDERSUB lParam:ScRGBA(c->foldLine, 0xFF)];
