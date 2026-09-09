@@ -464,10 +464,18 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[_statusBar updateForDocument:_document];
 }
 
+// 对照 Notepad4 UpdateWindowTitle(): "* " + "文件名 [目录]" + " - Notepad4"
 - (void)updateWindowTitle {
-	NSString *base = _document.fileURL.lastPathComponent ?: @"Untitled";
-	NSString *prefix = _document.dirty ? @"*" : @"";
-	self.window.title = [NSString stringWithFormat:@"%@%@ - Notepad4", prefix, base];
+	NSMutableString *t = [NSMutableString string];
+	if (_document.dirty) [t appendString:@"* "];
+	if (_document.fileURL) {
+		[t appendFormat:@"%@ [%@]", _document.fileURL.lastPathComponent,
+			[_document.fileURL.path stringByDeletingLastPathComponent]];
+	} else {
+		[t appendString:@"Untitled"];
+	}
+	[t appendString:@" - Notepad4"];
+	self.window.title = t;
 }
 
 - (void)docDirtyChanged:(NSNotification *)n {

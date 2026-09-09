@@ -4,18 +4,28 @@
 
 **体积 3 MB**（Windows 原版 2 MB，Wine 封装约 1 GB）。
 
-## 界面（复刻 Windows 版）
+## 界面（按 Notepad4 源码逐项复刻）
 
-- 顶部工具栏：新建/打开/保存 · 撤销/重做 · 剪切/复制/粘贴 · 查找/替换 · 缩放 · 词法器选择
-- 多标签页文档（修改点标记 •）
-- 底部状态栏六格：`Ln 行, Col 列 (选择字节) — 总行数` | `CRLF/LF` | `编码` | `文档大小` | `缩放%` | `词法器名`
-- 菜单：文件(F) / 编辑(E) / 搜索(S) / 查看(V) / 帮助(H)——40+ 命令对齐 Windows 版 IDM_ 清单
+- **菜单**：File / Edit / Search / View / Scheme / Settings / Tools / Help（对照 Notepad4.rc 原文，含全部子菜单与快捷键）
+- **工具栏**：直接使用原版 `Toolbar24.bmp` 位图图标，顺序取自 `DefaultToolbarButtons`
+  （Open Favorites · Browse │ New · New Window · Open▾ │ Save · Save As · Save Copy │ Undo · Redo │
+  Cut · Copy · Paste · Delete │ Find · Replace │ Word Wrap │ Toggle Folds▾ │ Zoom In · Zoom Out │
+  Syntax Scheme · Customize Schemes │ Exit）
+- **状态栏**：`Ln x / y` │ `Col x / y` │ `Ch x / y` │ `Sel bytes / chars` │ `SelLn n` │ `Fnd n` │
+  `词法器名` │ `编码` │ `CR+LF` │ `INS` │ `100%` │ `大小`（对照 `IDS_STATUSITEM_FORMAT`）
+- **编辑区**：行号栏（`#2B91AF`）、折叠栏（方框 +/-，`#8080FF`/`#ADD8E6`）、当前行 outline 框、
+  自动折叠 + 省略号（Boxed），TAB=4，光标 1px 线
+- **主题**：Scheme → Style Theme → `Default`（亮）/ `Dark`（暗，颜色取自 `Notepad4 DarkTheme.ini`，
+  默认暗色以对齐官方截图）。窗口 chrome 恒为浅色（与 Windows 版一致）
+- 单文档（Notepad4 本身无标签页）
 
 ## 功能
 
 | 功能 | 状态 |
 |---|---|
 | 90 个词法器（notepad4 原版词表+配色） | ✅ lexers_def/ 全量 |
+| 亮/暗主题（源码颜色值） | ✅ 像素级验证 #1E1E1E / #00B050 / #A349A4 |
+| 代码折叠 | ✅ Box tree 标记 + 自动折叠 |
 | 语法着色（每词法器独立样式） | ✅ 继承 stlXXX.cpp 原版配色 |
 | 编码检测/转换 | ✅ BOM/UTF-8/GB18030 探测；重载为 7 种编码；保存编码切换 |
 | 查找替换 | ✅ 正则/大小写/全字；替换单个/全部；循环查找 |
