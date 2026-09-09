@@ -161,13 +161,15 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 		_dirty = NO;
 		[[NSNotificationCenter defaultCenter] postNotificationName:@"EditorDocumentDirtyChanged" object:self];
 	} else if (scn->nmhdr.code == SCN_CHARADDED) {
-		[self onCharAdded:scn->ch];
+		[self onCharAdded:scn->ch source:(int)scn->characterSource];
 	} else if (scn->nmhdr.code == SCN_AUTOCSELECTION) {
 		// 列表选择完成
 	}
 }
 
-- (void)onCharAdded:(int)ch {
+- (void)onCharAdded:(int)ch source:(int)source {
+	// 对照 Notepad4.cpp:4755：IME 输入（非直接键入）不触发自动补全
+	if (source != SC_CHARACTERSOURCE_DIRECT_INPUT) return;
 	// 字母/数字/下划线且非自动补全激活时，从词表补全
 	if (![self autocEnabled]) return;
 	if ([_editor message:SCI_AUTOCACTIVE wParam:0 lParam:0]) return;
