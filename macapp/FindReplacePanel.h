@@ -6,6 +6,7 @@
 @interface FindReplacePanel : NSView <NSTextFieldDelegate>
 
 - (void)attachToWindow:(NSWindow *)window;
+- (void)applyLanguage;   // 切换界面语言后重建文本
 - (void)showFind:(BOOL)replaceVisible;
 - (void)toggle;
 

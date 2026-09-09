@@ -1,4 +1,5 @@
 #import "FindReplacePanel.h"
+#import "NPLocalization.h"
 #import "EditorDocument.h"
 #import "ScintillaView.h"
 #import "Scintilla.h"
@@ -48,17 +49,17 @@
 
 	// 查找行
 	self.findField = [[NSSearchField alloc] init];
-	self.findField.placeholderString = @"查找";
+	self.findField.placeholderString = NPL(@"Find");
 	self.findField.delegate = self;
 	self.findField.translatesAutoresizingMaskIntoConstraints = NO;
 	[self.findField.widthAnchor constraintEqualToConstant:320].active = YES;
 
-	self.caseCheck = [NSButton checkboxWithTitle:@"区分大小写" target:self action:@selector(refind:)];
-	self.wordCheck = [NSButton checkboxWithTitle:@"全字匹配" target:self action:@selector(refind:)];
-	self.regexCheck = [NSButton checkboxWithTitle:@"正则 ⌥⌘R" target:self action:@selector(refind:)];
+	self.caseCheck = [NSButton checkboxWithTitle:NPL(@"Match Case") target:self action:@selector(refind:)];
+	self.wordCheck = [NSButton checkboxWithTitle:NPL(@"Whole Word") target:self action:@selector(refind:)];
+	self.regexCheck = [NSButton checkboxWithTitle:[NPL(@"Regex") stringByAppendingString:@" ⌥⌘R"] target:self action:@selector(refind:)];
 
-	NSButton *prevBtn = [NSButton buttonWithTitle:@"上一个" target:self action:@selector(prev:)];
-	NSButton *nextBtn = [NSButton buttonWithTitle:@"下一个" target:self action:@selector(next:)];
+	NSButton *prevBtn = [NSButton buttonWithTitle:NPL(@"Previous") target:self action:@selector(prev:)];
+	NSButton *nextBtn = [NSButton buttonWithTitle:NPL(@"Next") target:self action:@selector(next:)];
 	nextBtn.keyEquivalent = @"\r";
 
 	NSStackView *row1 = [NSStackView stackViewWithViews:@[self.findField, prevBtn, nextBtn,
@@ -67,12 +68,12 @@
 
 	// 替换行
 	self.replaceField = [[NSTextField alloc] init];
-	self.replaceField.placeholderString = @"替换为";
+	self.replaceField.placeholderString = NPL(@"Replace With");
 	self.replaceField.translatesAutoresizingMaskIntoConstraints = NO;
 	[self.replaceField.widthAnchor constraintEqualToConstant:320].active = YES;
 
-	NSButton *repOne = [NSButton buttonWithTitle:@"替换" target:self action:@selector(replaceOne:)];
-	NSButton *repAll = [NSButton buttonWithTitle:@"全部替换" target:self action:@selector(replaceAll:)];
+	NSButton *repOne = [NSButton buttonWithTitle:NPL(@"Replace") target:self action:@selector(replaceOne:)];
+	NSButton *repAll = [NSButton buttonWithTitle:NPL(@"Replace All") target:self action:@selector(replaceAll:)];
 	self.replaceRow = [NSStackView stackViewWithViews:@[self.replaceField, repOne, repAll]];
 	self.replaceRow.spacing = 8;
 
@@ -81,10 +82,20 @@
 	for (NSView *v in stack.arrangedSubviews) { [stack setVisibilityPriority:NSStackViewVisibilityPriorityMustHold forView:v]; }
 }
 
+// 切换语言：保留当前输入内容重建控件
+- (void)applyLanguage {
+	NSString *f = self.findField.stringValue;
+	NSString *r = self.replaceField.stringValue;
+	for (NSView *v in [self.subviews copy]) [v removeFromSuperview];
+	[self buildUI];
+	self.findField.stringValue = f ?: @"";
+	self.replaceField.stringValue = r ?: @"";
+}
+
 - (void)attachToWindow:(NSWindow *)window {
 	self.hostWindow = window;
 	self.translatesAutoresizingMaskIntoConstraints = NO;
-	[window.contentView addSubview:self positioned:NSWindowBelow relativeTo:nil];
+	[window.contentView addSubview:self positioned:NSWindowAbove relativeTo:nil];
 	[self.widthAnchor constraintEqualToAnchor:window.contentView.widthAnchor].active = YES;
 	[self.heightAnchor constraintEqualToConstant:84].active = YES;
 	// 底部贴边（显示时编辑区让位由主控制器处理）
@@ -171,7 +182,7 @@
 	}
 	// 汇报
 	NSAlert *a = [[NSAlert alloc] init];
-	a.messageText = total ? [NSString stringWithFormat:@"已替换 %ld 处", total] : @"未找到匹配";
+	a.messageText = total ? [NSString stringWithFormat:NPL(@"Replaced %ld occurrences"), total] : NPL(@"No matches found");
 	[a runModal];
 }
 

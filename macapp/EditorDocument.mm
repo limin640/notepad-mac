@@ -5,6 +5,7 @@
 #import "LexerPalettes.h"
 #import "LexerRegistry.h"
 #import "NPTheme.h"
+#import "NPLocalization.h"
 #import "EditLexer.h"
 #include <string>
 #include "Sci_Position.h"
@@ -59,13 +60,14 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	NSArray<NSString *> *_keywordsForAutoc; // 词表缓存（自动补全）
 	const EDITLEXER *_currentLexer;
 	NPThemeKind _theme;
+	NSInteger _untitledSequence;
 }
 
 - (instancetype)initWithNewUntitled:(NSInteger)sequence {
 	self = [super init];
 	if (self) {
 		_fileURL = nil;
-		_tabTitle = [NSString stringWithFormat:@"无标题-%ld", (long)sequence];
+		_untitledSequence = sequence;
 		_usedEncoding = @"UTF-8";
 		[self setupEditor];
 	}
@@ -228,7 +230,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	if (!text) {
 		if (error) {
 			*error = [NSError errorWithDomain:@"Notepad4Mac" code:1
-				userInfo:@{NSLocalizedDescriptionKey: @"无法解码文件内容"}];
+				userInfo:@{NSLocalizedDescriptionKey: NPL(@"Cannot decode file content")}];
 		}
 		return NO;
 	}
@@ -269,7 +271,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	if (!data) {
 		if (error) {
 			*error = [NSError errorWithDomain:@"Notepad4Mac" code:2
-				userInfo:@{NSLocalizedDescriptionKey: @"按当前编码写出失败"}];
+				userInfo:@{NSLocalizedDescriptionKey: NPL(@"Failed to write with current encoding")}];
 		}
 		return NO;
 	}
@@ -373,8 +375,10 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 }
 
 - (NSString *)windowTitle {
-	NSString *base = _fileURL ? _fileURL.lastPathComponent : _tabTitle;
-	return _dirty ? [base stringByAppendingString:@" — 已修改"] : base;
+	// 标题按当前界面语言现算，切换语言后立即生效
+	NSString *base = _fileURL ? _fileURL.lastPathComponent
+		: [NSString stringWithFormat:@"%@-%ld", NPL(@"Untitled"), (long)_untitledSequence];
+	return _dirty ? [base stringByAppendingString:NPL(@" — Modified")] : base;
 }
 
 @end

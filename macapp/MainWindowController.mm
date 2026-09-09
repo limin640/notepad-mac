@@ -5,6 +5,7 @@
 #import "EditLexer.h"
 #import "LexerRegistry.h"
 #import "Scintilla.h"
+#import "NPLocalization.h"
 
 // 跟随系统明暗外观的 chrome 背景
 @interface NPChromeView : NSView
@@ -63,6 +64,8 @@
 	NSMenuItem *_lineNumbersItem;
 	StatusBarView *_statusBar;
 	EditorDocument *_document;
+	NSMenuItem *_langChineseItem;
+	NSMenuItem *_langEnglishItem;
 	NSMenuItem *_themeAutoItem;
 	NSMenuItem *_themeDefaultItem;
 	NSMenuItem *_themeDarkItem;
@@ -75,7 +78,7 @@
 		styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
 			   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
 		backing:NSBackingStoreBuffered defer:NO];
-	win.title = @"Untitled - Notepad4";
+	win.title = [NPL(@"Untitled") stringByAppendingString:@" - Notepad4"];
 	win.minSize = NSMakeSize(400, 280);
 	// chrome 跟随系统外观（暗色系统 → 暗色工具栏/状态栏）
 	self = [super initWithWindow:win];
@@ -111,41 +114,41 @@
 	[root addSubview:bar];
 
 	// 顺序取自 Notepad4.cpp DefaultToolbarButtons（iBitmap, action, dropdown）
-	struct TBEntry { int icon; SEL act; BOOL dropdown; };
+	struct TBEntry { int icon; SEL act; BOOL dropdown; const char *tip; };
 	static const TBEntry kTB[] = {
-		{21, @selector(tbOpenFav), NO},   // Open Favorites
-		{ 2, @selector(tbBrowse), NO},    // Browse...
-		{-1, nullptr, NO},                // ─
-		{ 0, @selector(fileNew), NO},     // New
-		{26, @selector(fileNewWindow), NO}, // New Window
-		{ 1, @selector(tbOpenDropdown), YES}, // Open ▾
-		{-1, nullptr, NO},
-		{ 3, @selector(fileSave), NO},    // Save
-		{17, @selector(fileSaveAs), NO},  // Save As
-		{18, @selector(fileSaveCopy), NO},// Save Copy
-		{-1, nullptr, NO},
-		{ 4, @selector(editUndo), NO},    // Undo
-		{ 5, @selector(editRedo), NO},    // Redo
-		{-1, nullptr, NO},
-		{ 6, @selector(editCut), NO},     // Cut
-		{ 7, @selector(editCopy), NO},    // Copy
-		{ 8, @selector(editPaste), NO},   // Paste
-		{19, @selector(editDelete), NO},  // Delete
-		{-1, nullptr, NO},
-		{ 9, @selector(searchFind), NO},  // Find
-		{10, @selector(searchReplace), NO},// Replace
-		{-1, nullptr, NO},
-		{11, @selector(viewWordWrap), NO},// Word Wrap
-		{-1, nullptr, NO},
-		{23, @selector(tbFoldDropdown), YES}, // Toggle Folds ▾
-		{-1, nullptr, NO},
-		{12, @selector(viewZoomIn), NO},  // Zoom In
-		{13, @selector(viewZoomOut), NO}, // Zoom Out
-		{-1, nullptr, NO},
-		{14, @selector(tbSchemeMenu), NO},// Syntax Scheme
-		{15, @selector(tbSchemeConfig), NO},// Customize Schemes
-		{-1, nullptr, NO},
-		{16, @selector(terminate), NO},   // Exit
+		{21, @selector(tbOpenFav), NO, "Open Favorites"},
+		{ 2, @selector(tbBrowse), NO, "Browse..."},
+		{-1, nullptr, NO, nullptr},
+		{ 0, @selector(fileNew), NO, "New"},
+		{26, @selector(fileNewWindow), NO, "New Window"},
+		{ 1, @selector(tbOpenDropdown), YES, "Open..."},
+		{-1, nullptr, NO, nullptr},
+		{ 3, @selector(fileSave), NO, "Save"},
+		{17, @selector(fileSaveAs), NO, "Save As..."},
+		{18, @selector(fileSaveCopy), NO, "Save Copy..."},
+		{-1, nullptr, NO, nullptr},
+		{ 4, @selector(editUndo), NO, "Undo"},
+		{ 5, @selector(editRedo), NO, "Redo"},
+		{-1, nullptr, NO, nullptr},
+		{ 6, @selector(editCut), NO, "Cut"},
+		{ 7, @selector(editCopy), NO, "Copy"},
+		{ 8, @selector(editPaste), NO, "Paste"},
+		{19, @selector(editDelete), NO, "Delete"},
+		{-1, nullptr, NO, nullptr},
+		{ 9, @selector(searchFind), NO, "Find..."},
+		{10, @selector(searchReplace), NO, "Replace..."},
+		{-1, nullptr, NO, nullptr},
+		{11, @selector(viewWordWrap), NO, "Word Wrap"},
+		{-1, nullptr, NO, nullptr},
+		{23, @selector(tbFoldDropdown), YES, "Toggle Folds"},
+		{-1, nullptr, NO, nullptr},
+		{12, @selector(viewZoomIn), NO, "Zoom In"},
+		{13, @selector(viewZoomOut), NO, "Zoom Out"},
+		{-1, nullptr, NO, nullptr},
+		{14, @selector(tbSchemeMenu), NO, "Syntax Scheme..."},
+		{15, @selector(tbSchemeConfig), NO, "Customize Schemes"},
+		{-1, nullptr, NO, nullptr},
+		{16, @selector(terminate), NO, "Exit"},
 	};
 
 	NSView *prev = nil;
@@ -167,7 +170,7 @@
 			b.icon = path ? [[NSImage alloc] initWithContentsOfFile:path] : [NSImage new];
 			b.tbTarget = self;
 			b.tbAction = e.act;
-			b.toolTip = NSStringFromSelector(e.act);
+			b.toolTip = e.tip ? NPL([NSString stringWithUTF8String:e.tip]) : nil;
 			b.translatesAutoresizingMaskIntoConstraints = NO;
 			[b.widthAnchor constraintEqualToConstant:22].active = YES;
 			[b.heightAnchor constraintEqualToConstant:22].active = YES;
@@ -224,6 +227,8 @@
 
 	_findPanel = [[FindReplacePanel alloc] initWithFrame:NSMakeRect(0, 0, 620, 84)];
 	[_findPanel attachToWindow:win];
+	// 面板底边贴状态栏顶部（不贴边会被编辑区盖住）
+	[_findPanel.bottomAnchor constraintEqualToAnchor:_statusBar.topAnchor].active = YES;
 }
 
 #pragma mark - 菜单（Notepad4.rc 原文）
@@ -243,15 +248,15 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	NSMenu *mb = [[NSMenu alloc] init];
 
 	// App 菜单（macOS 必需）
-	NSMenuItem *appItem = [mb addItemWithTitle:@"Notepad4" action:nil keyEquivalent:@""];
-	NSMenu *appMenu = M(@"");
-	[appMenu addItemWithTitle:@"About Notepad4" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+	NSMenuItem *appItem = [mb addItemWithTitle:NPL(@"Notepad4") action:nil keyEquivalent:@""];
+	NSMenu *appMenu = M(NPL(@""));
+	[appMenu addItemWithTitle:NPL(@"About Notepad4") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
 	MSep(appMenu);
-	[appMenu addItemWithTitle:@"Hide Notepad4" action:@selector(hide:) keyEquivalent:@"h"];
-	[appMenu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagOption;
-	[appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+	[appMenu addItemWithTitle:NPL(@"Hide Notepad4") action:@selector(hide:) keyEquivalent:@"h"];
+	[appMenu addItemWithTitle:NPL(@"Hide Others") action:@selector(hideOtherApplications:) keyEquivalent:@"h"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagOption;
+	[appMenu addItemWithTitle:NPL(@"Show All") action:@selector(unhideAllApplications:) keyEquivalent:@""];
 	MSep(appMenu);
-	[appMenu addItemWithTitle:@"Quit Notepad4" action:@selector(terminate:) keyEquivalent:@"q"];
+	[appMenu addItemWithTitle:NPL(@"Quit Notepad4") action:@selector(terminate:) keyEquivalent:@"q"];
 	appItem.submenu = appMenu;
 
 	NSString *F3 = [NSString stringWithFormat:@"%d", NSF3FunctionKey];
@@ -261,239 +266,245 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	NSString *F12 = [NSString stringWithFormat:@"%d", NSF12FunctionKey];
 
 	// ===== File =====
-	NSMenu *file = M(@"File");
-	MI(file, @"New\tCtrl+N", @selector(fileNew), @"n", 0);
-	MI(file, @"New Window\tAlt+N", @selector(fileNewWindow), @"n", NSEventModifierFlagOption);
-	MI(file, @"Open...\tCtrl+O", @selector(fileOpen), @"o", 0);
-	MI(file, @"Save\tCtrl+S", @selector(fileSave), @"s", 0);
-	MI(file, @"Save As...\tF6", @selector(fileSaveAs), F6, 0);
-	MI(file, @"Save Backup", @selector(fileSaveBackup), @"", 0);
-	MI(file, @"Save Copy...\tCtrl+F6", @selector(fileSaveCopy), F6, NSEventModifierFlagCommand);
+	NSMenu *file = M(NPL(@"File"));
+	MI(file, NPL(@"New\tCtrl+N"), @selector(fileNew), @"n", 0);
+	MI(file, NPL(@"New Window\tAlt+N"), @selector(fileNewWindow), @"n", NSEventModifierFlagOption);
+	MI(file, NPL(@"Open...\tCtrl+O"), @selector(fileOpen), @"o", 0);
+	MI(file, NPL(@"Save\tCtrl+S"), @selector(fileSave), @"s", 0);
+	MI(file, NPL(@"Save As...\tF6"), @selector(fileSaveAs), F6, 0);
+	MI(file, NPL(@"Save Backup"), @selector(fileSaveBackup), @"", 0);
+	MI(file, NPL(@"Save Copy...\tCtrl+F6"), @selector(fileSaveCopy), F6, NSEventModifierFlagCommand);
 	MSep(file);
-	NSMenuItem *fm = MI(file, @"File Mode", nil, @"", 0);
-	NSMenu *fms = M(@"");
-	MI(fms, @"Read Only File", @selector(nyi), @"", 0);
-	MI(fms, @"Read Only Mode\tF10", @selector(nyi), F10, 0);
+	NSMenuItem *fm = MI(file, NPL(@"File Mode"), nil, @"", 0);
+	NSMenu *fms = M(NPL(@""));
+	MI(fms, NPL(@"Read Only File"), @selector(nyi), @"", 0);
+	MI(fms, NPL(@"Read Only Mode\tF10"), @selector(nyi), F10, 0);
 	fm.submenu = fms;
-	MI(file, @"Revert\tF5", @selector(fileRevert), F5, 0);
-	NSMenuItem *rl = MI(file, @"Reload", nil, @"", 0);
-	NSMenu *rls = M(@"");
-	MI(rls, @"As UTF-8\tShift+F8", @selector(reloadUTF8), @"", 0);
-	MI(rls, @"As ANSI\tCtrl+Shift+A", @selector(reloadANSI), @"", 0);
-	MI(rls, @"As GBK", @selector(reloadGBK), @"", 0);
+	MI(file, NPL(@"Revert\tF5"), @selector(fileRevert), F5, 0);
+	NSMenuItem *rl = MI(file, NPL(@"Reload"), nil, @"", 0);
+	NSMenu *rls = M(NPL(@""));
+	MI(rls, NPL(@"As UTF-8\tShift+F8"), @selector(reloadUTF8), @"", 0);
+	MI(rls, NPL(@"As ANSI\tCtrl+Shift+A"), @selector(reloadANSI), @"", 0);
+	MI(rls, NPL(@"As GBK"), @selector(reloadGBK), @"", 0);
 	MSep(rls);
-	MI(rls, @"With Encoding...\tF8", @selector(nyi), @"", 0);
+	MI(rls, NPL(@"With Encoding...\tF8"), @selector(nyi), @"", 0);
 	rl.submenu = rls;
 	MSep(file);
-	NSMenuItem *enc = MI(file, @"Encoding", nil, @"", 0);
-	NSMenu *encs = M(@"");
-	MI(encs, @"ANSI", @selector(nyi), @"", 0).representedObject = @"ANSI";
-	MI(encs, @"UTF-8", @selector(setEncodingUTF8), @"", 0);
-	MI(encs, @"UTF-8 BOM", @selector(setEncodingUTF8BOM), @"", 0);
-	MI(encs, @"UTF-16LE BOM", @selector(setEncodingUTF16LE), @"", 0);
-	MI(encs, @"UTF-16BE BOM", @selector(setEncodingUTF16BE), @"", 0);
+	NSMenuItem *enc = MI(file, NPL(@"Encoding"), nil, @"", 0);
+	NSMenu *encs = M(NPL(@""));
+	MI(encs, NPL(@"ANSI"), @selector(nyi), @"", 0).representedObject = @"ANSI";
+	MI(encs, NPL(@"UTF-8"), @selector(setEncodingUTF8), @"", 0);
+	MI(encs, NPL(@"UTF-8 BOM"), @selector(setEncodingUTF8BOM), @"", 0);
+	MI(encs, NPL(@"UTF-16LE BOM"), @selector(setEncodingUTF16LE), @"", 0);
+	MI(encs, NPL(@"UTF-16BE BOM"), @selector(setEncodingUTF16BE), @"", 0);
 	enc.submenu = encs;
-	NSMenuItem *eol = MI(file, @"Line Endings", nil, @"", 0);
-	NSMenu *eols = M(@"");
-	MI(eols, @"Windows (CR+LF)", @selector(setEOLCRLF), @"", 0);
-	MI(eols, @"Unix/macOS (LF)", @selector(setEOLLF), @"", 0);
+	NSMenuItem *eol = MI(file, NPL(@"Line Endings"), nil, @"", 0);
+	NSMenu *eols = M(NPL(@""));
+	MI(eols, NPL(@"Windows (CR+LF)"), @selector(setEOLCRLF), @"", 0);
+	MI(eols, NPL(@"Unix/macOS (LF)"), @selector(setEOLLF), @"", 0);
 	eol.submenu = eols;
 	MSep(file);
-	MI(file, @"Page Setup...", @selector(nyi), @"", 0);
-	MI(file, @"Print...\tCtrl+P", @selector(printDocument), @"p", 0);
+	MI(file, NPL(@"Page Setup..."), @selector(nyi), @"", 0);
+	MI(file, NPL(@"Print...\tCtrl+P"), @selector(printDocument), @"p", 0);
 	MSep(file);
-	MI(file, @"Properties...", @selector(fileProperties), @"", 0);
-	MI(file, @"Open Containing Folder", @selector(openContainingFolder), @"", 0);
+	MI(file, NPL(@"Properties..."), @selector(fileProperties), @"", 0);
+	MI(file, NPL(@"Open Containing Folder"), @selector(openContainingFolder), @"", 0);
 	MSep(file);
-	MI(file, @"Recent (History)...\tAlt+H", @selector(nyi), @"", 0);
+	MI(file, NPL(@"Recent (History)...\tAlt+H"), @selector(nyi), @"", 0);
 	MSep(file);
-	MI(file, @"Exit\tAlt+F4", @selector(terminate), @"", 0);
-	{ NSMenuItem *_it_file = [mb addItemWithTitle:@"File" action:nil keyEquivalent:@""]; _it_file.submenu = file; }
+	MI(file, NPL(@"Exit\tAlt+F4"), @selector(terminate), @"", 0);
+	{ NSMenuItem *_it_file = [mb addItemWithTitle:NPL(@"File") action:nil keyEquivalent:@""]; _it_file.submenu = file; }
 
 	// ===== Edit =====
-	NSMenu *edit = M(@"Edit");
-	MI(edit, @"Undo\tCtrl+Z", @selector(editUndo), @"z", 0);
-	MI(edit, @"Redo\tCtrl+Y", @selector(editRedo), @"y", 0);
+	NSMenu *edit = M(NPL(@"Edit"));
+	MI(edit, NPL(@"Undo\tCtrl+Z"), @selector(editUndo), @"z", 0);
+	MI(edit, NPL(@"Redo\tCtrl+Y"), @selector(editRedo), @"y", 0);
 	MSep(edit);
-	MI(edit, @"Cut\tCtrl+X", @selector(editCut), @"x", 0);
-	MI(edit, @"Copy\tCtrl+C", @selector(editCopy), @"c", 0);
-	MI(edit, @"Paste\tCtrl+V", @selector(editPaste), @"v", 0);
-	MI(edit, @"Delete\tDel", @selector(editDelete), @"", 0);
-	MI(edit, @"Select All\tCtrl+A", @selector(editSelectAll), @"a", 0);
-	MI(edit, @"Swap\tCtrl+K", @selector(nyi), @"k", 0);
+	MI(edit, NPL(@"Cut\tCtrl+X"), @selector(editCut), @"x", 0);
+	MI(edit, NPL(@"Copy\tCtrl+C"), @selector(editCopy), @"c", 0);
+	MI(edit, NPL(@"Paste\tCtrl+V"), @selector(editPaste), @"v", 0);
+	MI(edit, NPL(@"Delete\tDel"), @selector(editDelete), @"", 0);
+	MI(edit, NPL(@"Select All\tCtrl+A"), @selector(editSelectAll), @"a", 0);
+	MI(edit, NPL(@"Swap\tCtrl+K"), @selector(nyi), @"k", 0);
 	MSep(edit);
-	MI(edit, @"Clear Document", @selector(editClearDocument), @"", 0);
-	MI(edit, @"Clear Clipboard", @selector(nyi), @"", 0);
-	NSMenuItem *cc = MI(edit, @"Copy to Clipboard", nil, @"", 0);
-	NSMenu *ccs = M(@"");
-	MI(ccs, @"File Name", @selector(nyi), @"", 0);
-	MI(ccs, @"Full Path Name\tAlt+Shift+F9", @selector(nyi), @"", 0);
+	MI(edit, NPL(@"Clear Document"), @selector(editClearDocument), @"", 0);
+	MI(edit, NPL(@"Clear Clipboard"), @selector(nyi), @"", 0);
+	NSMenuItem *cc = MI(edit, NPL(@"Copy to Clipboard"), nil, @"", 0);
+	NSMenu *ccs = M(NPL(@""));
+	MI(ccs, NPL(@"File Name"), @selector(nyi), @"", 0);
+	MI(ccs, NPL(@"Full Path Name\tAlt+Shift+F9"), @selector(nyi), @"", 0);
 	MSep(ccs);
-	MI(ccs, @"Copy All\tAlt+A", @selector(nyi), @"a", NSEventModifierFlagOption);
-	MI(ccs, @"Copy as RTF", @selector(nyi), @"", 0);
+	MI(ccs, NPL(@"Copy All\tAlt+A"), @selector(nyi), @"a", NSEventModifierFlagOption);
+	MI(ccs, NPL(@"Copy as RTF"), @selector(nyi), @"", 0);
 	cc.submenu = ccs;
 	MSep(edit);
-	NSMenuItem *sel = MI(edit, @"Selection", nil, @"", 0);
-	NSMenu *sels = M(@"");
-	MI(sels, @"Duplicate\tAlt+D", @selector(nyi), @"d", NSEventModifierFlagOption);
+	NSMenuItem *sel = MI(edit, NPL(@"Selection"), nil, @"", 0);
+	NSMenu *sels = M(NPL(@""));
+	MI(sels, NPL(@"Duplicate\tAlt+D"), @selector(nyi), @"d", NSEventModifierFlagOption);
 	MSep(sels);
-	MI(sels, @"Toggle Line Comment\tCtrl+/", @selector(editLineComment), @"/", 0);
-	MI(sels, @"Indent\tTab", @selector(editIndent), @"", 0);
-	MI(sels, @"Unindent\tShift+Tab", @selector(editUnindent), @"", 0);
+	MI(sels, NPL(@"Toggle Line Comment\tCtrl+/"), @selector(editLineComment), @"/", 0);
+	MI(sels, NPL(@"Indent\tTab"), @selector(editIndent), @"", 0);
+	MI(sels, NPL(@"Unindent\tShift+Tab"), @selector(editUnindent), @"", 0);
 	MSep(sels);
-	MI(sels, @"Strip Trailing Blanks\tAlt+T", @selector(editTrimTrailing), @"t", NSEventModifierFlagOption);
-	MI(sels, @"Remove Blank Lines\tAlt+R", @selector(nyi), @"r", NSEventModifierFlagOption);
+	MI(sels, NPL(@"Strip Trailing Blanks\tAlt+T"), @selector(editTrimTrailing), @"t", NSEventModifierFlagOption);
+	MI(sels, NPL(@"Remove Blank Lines\tAlt+R"), @selector(nyi), @"r", NSEventModifierFlagOption);
 	sel.submenu = sels;
-	NSMenuItem *lines = MI(edit, @"Lines", nil, @"", 0);
-	NSMenu *lss = M(@"");
-	MI(lss, @"Move Up\tAlt+Up", @selector(editMoveLineUp), [NSString stringWithFormat:@"%d", NSUpArrowFunctionKey], NSEventModifierFlagOption);
-	MI(lss, @"Move Down\tAlt+Down", @selector(editMoveLineDown), [NSString stringWithFormat:@"%d", NSDownArrowFunctionKey], NSEventModifierFlagOption);
-	MI(lss, @"Transpose\tAlt+S", @selector(editTranspose), @"s", NSEventModifierFlagOption);
+	NSMenuItem *lines = MI(edit, NPL(@"Lines"), nil, @"", 0);
+	NSMenu *lss = M(NPL(@""));
+	MI(lss, NPL(@"Move Up\tAlt+Up"), @selector(editMoveLineUp), [NSString stringWithFormat:@"%d", NSUpArrowFunctionKey], NSEventModifierFlagOption);
+	MI(lss, NPL(@"Move Down\tAlt+Down"), @selector(editMoveLineDown), [NSString stringWithFormat:@"%d", NSDownArrowFunctionKey], NSEventModifierFlagOption);
+	MI(lss, NPL(@"Transpose\tAlt+S"), @selector(editTranspose), @"s", NSEventModifierFlagOption);
 	MSep(lss);
-	MI(lss, @"Duplicate Line\tCtrl+D", @selector(editDuplicateLine), @"d", 0);
-	MI(lss, @"Cut Line\tCtrl+Shift+X", @selector(editCutLine), @"x", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(lss, @"Copy Line\tCtrl+Shift+C", @selector(editCopyLine), @"c", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(lss, @"Delete Line\tCtrl+Shift+D", @selector(editDeleteLine), @"d", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(lss, NPL(@"Duplicate Line\tCtrl+D"), @selector(editDuplicateLine), @"d", 0);
+	MI(lss, NPL(@"Cut Line\tCtrl+Shift+X"), @selector(editCutLine), @"x", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(lss, NPL(@"Copy Line\tCtrl+Shift+C"), @selector(editCopyLine), @"c", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(lss, NPL(@"Delete Line\tCtrl+Shift+D"), @selector(editDeleteLine), @"d", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(lss);
-	MI(lss, @"Join Lines\tCtrl+J", @selector(editJoinLines), @"j", 0);
-	MI(lss, @"Split Lines\tCtrl+I", @selector(editSplitLines), @"i", 0);
+	MI(lss, NPL(@"Join Lines\tCtrl+J"), @selector(editJoinLines), @"j", 0);
+	MI(lss, NPL(@"Split Lines\tCtrl+I"), @selector(editSplitLines), @"i", 0);
 	lines.submenu = lss;
-	NSMenuItem *conv = MI(edit, @"Convert", nil, @"", 0);
-	NSMenu *cvs = M(@"");
-	MI(cvs, @"UPPER CASE\tCtrl+Shift+U", @selector(editUpper), @"u", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(cvs, @"lower case\tCtrl+U", @selector(editLower), @"u", 0);
-	MI(cvs, @"Invert Case", @selector(nyi), @"", 0);
-	MI(cvs, @"Title Case", @selector(nyi), @"", 0);
+	NSMenuItem *conv = MI(edit, NPL(@"Convert"), nil, @"", 0);
+	NSMenu *cvs = M(NPL(@""));
+	MI(cvs, NPL(@"UPPER CASE\tCtrl+Shift+U"), @selector(editUpper), @"u", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(cvs, NPL(@"lower case\tCtrl+U"), @selector(editLower), @"u", 0);
+	MI(cvs, NPL(@"Invert Case"), @selector(nyi), @"", 0);
+	MI(cvs, NPL(@"Title Case"), @selector(nyi), @"", 0);
 	MSep(cvs);
-	MI(cvs, @"Tabify Selection (Indent)\tCtrl+Alt+T", @selector(nyi), @"t", NSEventModifierFlagCommand|NSEventModifierFlagOption);
-	MI(cvs, @"Untabify Selection (Indent)\tCtrl+Alt+S", @selector(nyi), @"s", NSEventModifierFlagCommand|NSEventModifierFlagOption);
+	MI(cvs, NPL(@"Tabify Selection (Indent)\tCtrl+Alt+T"), @selector(nyi), @"t", NSEventModifierFlagCommand|NSEventModifierFlagOption);
+	MI(cvs, NPL(@"Untabify Selection (Indent)\tCtrl+Alt+S"), @selector(nyi), @"s", NSEventModifierFlagCommand|NSEventModifierFlagOption);
 	conv.submenu = cvs;
-	NSMenuItem *ins = MI(edit, @"Insert", nil, @"", 0);
-	NSMenu *insm = M(@"");
-	MI(insm, @"Complete Word\tAlt+/", @selector(editCompleteWord), @"/", NSEventModifierFlagOption);
+	NSMenuItem *ins = MI(edit, NPL(@"Insert"), nil, @"", 0);
+	NSMenu *insm = M(NPL(@""));
+	MI(insm, NPL(@"Complete Word\tAlt+/"), @selector(editCompleteWord), @"/", NSEventModifierFlagOption);
 	MSep(insm);
-	MI(insm, @"New GUID", @selector(insertGUID), @"", 0);
-	MI(insm, @"File Name", @selector(nyi), @"", 0);
+	MI(insm, NPL(@"New GUID"), @selector(insertGUID), @"", 0);
+	MI(insm, NPL(@"File Name"), @selector(nyi), @"", 0);
 	MSep(insm);
-	MI(insm, @"Current Date Time", @selector(insertDateTime), @"", 0);
-	MI(insm, @"Unix Timestamp", @selector(nyi), @"", 0);
+	MI(insm, NPL(@"Current Date Time"), @selector(insertDateTime), @"", 0);
+	MI(insm, NPL(@"Unix Timestamp"), @selector(nyi), @"", 0);
 	ins.submenu = insm;
-	{ NSMenuItem *_it_edit = [mb addItemWithTitle:@"Edit" action:nil keyEquivalent:@""]; _it_edit.submenu = edit; }
+	{ NSMenuItem *_it_edit = [mb addItemWithTitle:NPL(@"Edit") action:nil keyEquivalent:@""]; _it_edit.submenu = edit; }
 
 	// ===== Search =====
-	NSMenu *search = M(@"Search");
-	MI(search, @"Find...\tCtrl+F", @selector(searchFind), @"f", 0);
-	MI(search, @"Save Find Text", @selector(nyi), @"", 0);
-	MI(search, @"Find Next\tF3", @selector(searchFindNext), F3, 0);
-	MI(search, @"Find Previous\tShift+F3", @selector(searchFindPrev), F3, NSEventModifierFlagShift);
-	MI(search, @"Replace...\tCtrl+H", @selector(searchReplace), @"h", 0);
-	MI(search, @"Replace Next\tF4", @selector(nyi), [NSString stringWithFormat:@"%d", NSF4FunctionKey], 0);
+	NSMenu *search = M(NPL(@"Search"));
+	MI(search, NPL(@"Find...\tCtrl+F"), @selector(searchFind), @"f", 0);
+	MI(search, NPL(@"Save Find Text"), @selector(nyi), @"", 0);
+	MI(search, NPL(@"Find Next\tF3"), @selector(searchFindNext), F3, 0);
+	MI(search, NPL(@"Find Previous\tShift+F3"), @selector(searchFindPrev), F3, NSEventModifierFlagShift);
+	MI(search, NPL(@"Replace...\tCtrl+H"), @selector(searchReplace), @"h", 0);
+	MI(search, NPL(@"Replace Next\tF4"), @selector(nyi), [NSString stringWithFormat:@"%d", NSF4FunctionKey], 0);
 	MSep(search);
-	MI(search, @"Find Matching Brace\tCtrl+B", @selector(nyi), @"b", 0);
-	MI(search, @"Select Word", @selector(nyi), @"", 0);
+	MI(search, NPL(@"Find Matching Brace\tCtrl+B"), @selector(nyi), @"b", 0);
+	MI(search, NPL(@"Select Word"), @selector(nyi), @"", 0);
 	MSep(search);
-	NSMenuItem *bm = MI(search, @"Bookmarks", nil, @"", 0);
-	NSMenu *bms = M(@"");
-	MI(bms, @"Toggle\tCtrl+F2", @selector(bookmarkToggle), @"", NSEventModifierFlagCommand);
+	NSMenuItem *bm = MI(search, NPL(@"Bookmarks"), nil, @"", 0);
+	NSMenu *bms = M(NPL(@""));
+	MI(bms, NPL(@"Toggle\tCtrl+F2"), @selector(bookmarkToggle), @"", NSEventModifierFlagCommand);
 	MSep(bms);
-	MI(bms, @"Goto Next\tF2", @selector(bookmarkNext), [NSString stringWithFormat:@"%d", NSF2FunctionKey], 0);
-	MI(bms, @"Goto Previous\tShift+F2", @selector(bookmarkPrev), [NSString stringWithFormat:@"%d", NSF2FunctionKey], NSEventModifierFlagShift);
+	MI(bms, NPL(@"Goto Next\tF2"), @selector(bookmarkNext), [NSString stringWithFormat:@"%d", NSF2FunctionKey], 0);
+	MI(bms, NPL(@"Goto Previous\tShift+F2"), @selector(bookmarkPrev), [NSString stringWithFormat:@"%d", NSF2FunctionKey], NSEventModifierFlagShift);
 	MSep(bms);
-	MI(bms, @"Clear All\tAlt+F2", @selector(bookmarkClear), @"", 0);
+	MI(bms, NPL(@"Clear All\tAlt+F2"), @selector(bookmarkClear), @"", 0);
 	bm.submenu = bms;
-	NSMenuItem *go = MI(search, @"Goto", nil, @"", 0);
-	NSMenu *gom = M(@"");
-	MI(gom, @"Goto Line...\tCtrl+G", @selector(gotoLine), @"g", 0);
+	NSMenuItem *go = MI(search, NPL(@"Goto"), nil, @"", 0);
+	NSMenu *gom = M(NPL(@""));
+	MI(gom, NPL(@"Goto Line...\tCtrl+G"), @selector(gotoLine), @"g", 0);
 	go.submenu = gom;
-	{ NSMenuItem *_it_search = [mb addItemWithTitle:@"Search" action:nil keyEquivalent:@""]; _it_search.submenu = search; }
+	{ NSMenuItem *_it_search = [mb addItemWithTitle:NPL(@"Search") action:nil keyEquivalent:@""]; _it_search.submenu = search; }
 
 	// ===== View =====
-	NSMenu *view = M(@"View");
-	_wordWrapItem = MI(view, @"Word Wrap\tCtrl+Shift+W", @selector(viewWordWrap), @"w", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	NSMenu *view = M(NPL(@"View"));
+	_wordWrapItem = MI(view, NPL(@"Word Wrap\tCtrl+Shift+W"), @selector(viewWordWrap), @"w", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	_wordWrapItem.state = NSControlStateValueOff;
-	MI(view, @"Long Line Marker\tCtrl+Shift+L", @selector(nyi), @"l", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(view, @"Indentation Guides\tCtrl+Shift+G", @selector(viewIndentGuides), @"g", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Long Line Marker\tCtrl+Shift+L"), @selector(nyi), @"l", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Indentation Guides\tCtrl+Shift+G"), @selector(viewIndentGuides), @"g", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
-	MI(view, @"Show Whitespace\tCtrl+Shift+8", @selector(viewWhitespace), @"8", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(view, @"Show Line Endings\tCtrl+Shift+9", @selector(viewEOLs), @"9", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Show Whitespace\tCtrl+Shift+8"), @selector(viewWhitespace), @"8", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Show Line Endings\tCtrl+Shift+9"), @selector(viewEOLs), @"9", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
-	MI(view, @"Visual Brace Matching\tCtrl+Shift+V", @selector(nyi), @"v", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Visual Brace Matching\tCtrl+Shift+V"), @selector(nyi), @"v", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
-	_lineNumbersItem = MI(view, @"Line Numbers\tCtrl+Shift+N", @selector(viewLineNumbers), @"n", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	_lineNumbersItem = MI(view, NPL(@"Line Numbers\tCtrl+Shift+N"), @selector(viewLineNumbers), @"n", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	_lineNumbersItem.state = NSControlStateValueOn;
-	MI(view, @"Bookmark Margin\tCtrl+Shift+M", @selector(nyi), @"m", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Bookmark Margin\tCtrl+Shift+M"), @selector(nyi), @"m", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
-	MI(view, @"Show Code Folding", @selector(viewCodeFolding), @"", 0);
-	NSMenuItem *zm = MI(view, @"Zoom", nil, @"", 0);
-	NSMenu *zmm = M(@"");
-	MI(zmm, @"Zoom In\tCtrl++", @selector(viewZoomIn), @"+", 0);
-	MI(zmm, @"Zoom Out\tCtrl+-", @selector(viewZoomOut), @"-", 0);
-	MI(zmm, @"Reset Zoom\tCtrl+\\", @selector(viewZoomReset), @"\\", 0);
+	MI(view, NPL(@"Show Code Folding"), @selector(viewCodeFolding), @"", 0);
+	NSMenuItem *zm = MI(view, NPL(@"Zoom"), nil, @"", 0);
+	NSMenu *zmm = M(NPL(@""));
+	MI(zmm, NPL(@"Zoom In\tCtrl++"), @selector(viewZoomIn), @"+", 0);
+	MI(zmm, NPL(@"Zoom Out\tCtrl+-"), @selector(viewZoomOut), @"-", 0);
+	MI(zmm, NPL(@"Reset Zoom\tCtrl+\\"), @selector(viewZoomReset), @"\\", 0);
 	zm.submenu = zmm;
-	MI(view, @"Toggle Full Screen\tF11", @selector(toggleFullScreen), [NSString stringWithFormat:@"%d", NSF11FunctionKey], 0);
-	{ NSMenuItem *_it_view = [mb addItemWithTitle:@"View" action:nil keyEquivalent:@""]; _it_view.submenu = view; }
+	MI(view, NPL(@"Toggle Full Screen\tF11"), @selector(toggleFullScreen), [NSString stringWithFormat:@"%d", NSF11FunctionKey], 0);
+	{ NSMenuItem *_it_view = [mb addItemWithTitle:NPL(@"View") action:nil keyEquivalent:@""]; _it_view.submenu = view; }
 
 	// ===== Scheme =====
-	NSMenu *scheme = M(@"Scheme");
-	MI(scheme, @"Syntax Scheme...\tF12", @selector(schemeChoose), F12, 0);
-	MI(scheme, @"Use Default Code Style\tShift+F12", @selector(schemeReset), F12, NSEventModifierFlagShift);
+	NSMenu *scheme = M(NPL(@"Scheme"));
+	MI(scheme, NPL(@"Syntax Scheme...\tF12"), @selector(schemeChoose), F12, 0);
+	MI(scheme, NPL(@"Use Default Code Style\tShift+F12"), @selector(schemeReset), F12, NSEventModifierFlagShift);
 	MSep(scheme);
-	NSMenuItem *thm = MI(scheme, @"Style Theme", nil, @"", 0);
-	NSMenu *thms = M(@"");
-	_themeAutoItem = MI(thms, @"Follow System", @selector(themeAuto), @"", 0);
-	_themeDefaultItem = MI(thms, @"Light", @selector(themeDefault), @"", 0);
-	_themeDarkItem = MI(thms, @"Dark", @selector(themeDark), @"", 0);
+	NSMenuItem *thm = MI(scheme, NPL(@"Style Theme"), nil, @"", 0);
+	NSMenu *thms = M(NPL(@""));
+	_themeAutoItem = MI(thms, NPL(@"Follow System"), @selector(themeAuto), @"", 0);
+	_themeDefaultItem = MI(thms, NPL(@"Light"), @selector(themeDefault), @"", 0);
+	_themeDarkItem = MI(thms, NPL(@"Dark"), @selector(themeDark), @"", 0);
 	[self updateThemeMenuState];
 	thm.submenu = thms;
-	{ NSMenuItem *_it_scheme = [mb addItemWithTitle:@"Scheme" action:nil keyEquivalent:@""]; _it_scheme.submenu = scheme; }
+	{ NSMenuItem *_it_scheme = [mb addItemWithTitle:NPL(@"Scheme") action:nil keyEquivalent:@""]; _it_scheme.submenu = scheme; }
 
 	// ===== Settings =====
-	NSMenu *settings = M(@"Settings");
-	MI(settings, @"Insert Tabs as Spaces", @selector(nyi), @"", 0);
-	MI(settings, @"Tab Settings...\tCtrl+T", @selector(nyi), @"t", 0);
-	MI(settings, @"Auto Completion Settings...", @selector(nyi), @"", 0);
+	NSMenu *settings = M(NPL(@"Settings"));
+	MI(settings, NPL(@"Insert Tabs as Spaces"), @selector(nyi), @"", 0);
+	MI(settings, NPL(@"Tab Settings...\tCtrl+T"), @selector(nyi), @"t", 0);
+	MI(settings, NPL(@"Auto Completion Settings..."), @selector(nyi), @"", 0);
 	MSep(settings);
-	NSMenuItem *ap = MI(settings, @"Appearance", nil, @"", 0);
-	NSMenu *aps = M(@"");
-	MI(aps, @"Show Menu\tAlt+F11", @selector(nyi), @"", 0);
-	MI(aps, @"Show Toolbar\tCtrl+F11", @selector(nyi), @"", 0);
-	MI(aps, @"Show Statusbar\tShift+F11", @selector(toggleStatusBar), @"", 0);
+	NSMenuItem *lang = MI(settings, NPL(@"Language"), nil, @"", 0);
+	NSMenu *langs = M(NPL(@""));
+	_langChineseItem = MI(langs, @"简体中文", @selector(languageChinese), @"", 0);
+	_langEnglishItem = MI(langs, @"English", @selector(languageEnglish), @"", 0);
+	lang.submenu = langs;
+	[self updateLanguageMenuState];
+	NSMenuItem *ap = MI(settings, NPL(@"Appearance"), nil, @"", 0);
+	NSMenu *aps = M(NPL(@""));
+	MI(aps, NPL(@"Show Menu\tAlt+F11"), @selector(nyi), @"", 0);
+	MI(aps, NPL(@"Show Toolbar\tCtrl+F11"), @selector(nyi), @"", 0);
+	MI(aps, NPL(@"Show Statusbar\tShift+F11"), @selector(toggleStatusBar), @"", 0);
 	ap.submenu = aps;
-	MI(settings, @"Save Settings On Exit", @selector(nyi), @"", 0);
-	MI(settings, @"Save Settings Now\tF7", @selector(nyi), [NSString stringWithFormat:@"%d", NSF7FunctionKey], 0);
-	{ NSMenuItem *_it_settings = [mb addItemWithTitle:@"Settings" action:nil keyEquivalent:@""]; _it_settings.submenu = settings; }
+	MI(settings, NPL(@"Save Settings On Exit"), @selector(nyi), @"", 0);
+	MI(settings, NPL(@"Save Settings Now\tF7"), @selector(nyi), [NSString stringWithFormat:@"%d", NSF7FunctionKey], 0);
+	{ NSMenuItem *_it_settings = [mb addItemWithTitle:NPL(@"Settings") action:nil keyEquivalent:@""]; _it_settings.submenu = settings; }
 
 	// ===== Tools =====
-	NSMenu *tools = M(@"Tools");
-	MI(tools, @"Execute Document\tCtrl+L", @selector(nyi), @"l", 0);
-	MI(tools, @"Open Document With...", @selector(nyi), @"", 0);
-	MI(tools, @"Run Command...\tCtrl+R", @selector(nyi), @"r", 0);
+	NSMenu *tools = M(NPL(@"Tools"));
+	MI(tools, NPL(@"Execute Document\tCtrl+L"), @selector(nyi), @"l", 0);
+	MI(tools, NPL(@"Open Document With..."), @selector(nyi), @"", 0);
+	MI(tools, NPL(@"Run Command...\tCtrl+R"), @selector(nyi), @"r", 0);
 	MSep(tools);
-	NSMenuItem *ws = MI(tools, @"Action on Selection", nil, @"", 0);
-	NSMenu *wsm = M(@"");
-	MI(wsm, @"Open File, Folder, Link, etc.", @selector(nyi), @"", 0);
-	MI(wsm, @"Search with &Google", @selector(nyi), @"", 0);
+	NSMenuItem *ws = MI(tools, NPL(@"Action on Selection"), nil, @"", 0);
+	NSMenu *wsm = M(NPL(@""));
+	MI(wsm, NPL(@"Open File, Folder, Link, etc."), @selector(nyi), @"", 0);
+	MI(wsm, NPL(@"Search with &Google"), @selector(nyi), @"", 0);
 	ws.submenu = wsm;
-	NSMenuItem *b64 = MI(tools, @"Base64", nil, @"", 0);
-	NSMenu *b64m = M(@"");
-	MI(b64m, @"Standard Encode", @selector(base64Encode), @"", 0);
-	MI(b64m, @"URL Safe Encode", @selector(nyi), @"", 0);
-	MI(b64m, @"Decode", @selector(base64Decode), @"", 0);
+	NSMenuItem *b64 = MI(tools, NPL(@"Base64"), nil, @"", 0);
+	NSMenu *b64m = M(NPL(@""));
+	MI(b64m, NPL(@"Standard Encode"), @selector(base64Encode), @"", 0);
+	MI(b64m, NPL(@"URL Safe Encode"), @selector(nyi), @"", 0);
+	MI(b64m, NPL(@"Decode"), @selector(base64Decode), @"", 0);
 	b64.submenu = b64m;
-	NSMenuItem *webt = MI(tools, @"Web Tools", nil, @"", 0);
-	NSMenu *wtm = M(@"");
-	MI(wtm, @"URL Encode\tCtrl+Shift+E", @selector(urlEncode), @"e", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(wtm, @"URL Decode\tCtrl+Shift+R", @selector(urlDecode), @"r", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(wtm, @"Escape HTML/XML Chars", @selector(nyi), @"", 0);
-	MI(wtm, @"Unescape HTML/XML Chars", @selector(nyi), @"", 0);
+	NSMenuItem *webt = MI(tools, NPL(@"Web Tools"), nil, @"", 0);
+	NSMenu *wtm = M(NPL(@""));
+	MI(wtm, NPL(@"URL Encode\tCtrl+Shift+E"), @selector(urlEncode), @"e", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(wtm, NPL(@"URL Decode\tCtrl+Shift+R"), @selector(urlDecode), @"r", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(wtm, NPL(@"Escape HTML/XML Chars"), @selector(nyi), @"", 0);
+	MI(wtm, NPL(@"Unescape HTML/XML Chars"), @selector(nyi), @"", 0);
 	webt.submenu = wtm;
-	{ NSMenuItem *_it_tools = [mb addItemWithTitle:@"Tools" action:nil keyEquivalent:@""]; _it_tools.submenu = tools; }
+	{ NSMenuItem *_it_tools = [mb addItemWithTitle:NPL(@"Tools") action:nil keyEquivalent:@""]; _it_tools.submenu = tools; }
 
 	// ===== Help =====
-	NSMenu *help = M(@"Help");
-	MI(help, @"Project Home", @selector(helpHome), @"", 0);
-	MI(help, @"About Notepad4", @selector(orderFrontStandardAboutPanel:), @"", 0);
-	{ NSMenuItem *_it_help = [mb addItemWithTitle:@"Help" action:nil keyEquivalent:@""]; _it_help.submenu = help; }
+	NSMenu *help = M(NPL(@"Help"));
+	MI(help, NPL(@"Project Home"), @selector(helpHome), @"", 0);
+	MI(help, NPL(@"About Notepad4"), @selector(orderFrontStandardAboutPanel:), @"", 0);
+	{ NSMenuItem *_it_help = [mb addItemWithTitle:NPL(@"Help") action:nil keyEquivalent:@""]; _it_help.submenu = help; }
 
 	NSApp.mainMenu = mb;
 }
@@ -519,7 +530,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 		[t appendFormat:@"%@ [%@]", _document.fileURL.lastPathComponent,
 			[_document.fileURL.path stringByDeletingLastPathComponent]];
 	} else {
-		[t appendString:@"Untitled"];
+		[t appendString:NPL(@"Untitled")];
 	}
 	[t appendString:@" - Notepad4"];
 	self.window.title = t;
@@ -800,6 +811,27 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[_document applyLexerForExtension:[first stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
 	[self refreshStatus];
 }
+// 查找面板显示/隐藏（面板浮在编辑区之上，布局无需调整）
+- (void)updateLanguageMenuState {
+	const NPLanguage lang = NPLanguageGet();
+	_langChineseItem.state = (lang == NPLanguageChinese) ? NSControlStateValueOn : NSControlStateValueOff;
+	_langEnglishItem.state = (lang == NPLanguageEnglish) ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+// 切换界面语言：重建菜单 + 状态栏 + 查找面板 + 标题
+- (void)applyLanguage:(NPLanguage)lang {
+	NPLanguageSet(lang);
+	[self buildMenu];
+	[_statusBar applyLanguage];
+	[_findPanel applyLanguage];
+	[self updateWindowTitle];
+	[self refreshStatus];
+	[self.window.contentView setNeedsDisplay:YES];
+}
+
+- (void)languageChinese { [self applyLanguage:NPLanguageChinese]; }
+- (void)languageEnglish { [self applyLanguage:NPLanguageEnglish]; }
+
 - (void)updateThemeMenuState {
 	const NPThemeMode mode = NPThemeModeGet();
 	_themeAutoItem.state = (mode == NPThemeModeAuto) ? NSControlStateValueOn : NSControlStateValueOff;

@@ -9,4 +9,6 @@
 - (void)refreshStatus;
 - (void)updateWindowTitle;
 
+- (void)languageChinese;
+- (void)languageEnglish;
 @end

@@ -2,6 +2,7 @@
 // "Ln %s / %s \nCol %s / %s \nCh %s / %s \nSel %s / %s \nSelLn %s \nFnd %s "
 // 后续格：词法器 | 编码 | EOL | INS/OVR | 缩放 | 文档大小
 #import "StatusBarView.h"
+#import "NPLocalization.h"
 #import "EditorDocument.h"
 #import "ScintillaView.h"
 #import "Scintilla.h"
@@ -44,45 +45,62 @@ static NSString *WStr2(const wchar_t *ws) {
 	if (self) {
 		self.wantsLayer = YES;
 		_cells = [NSMutableArray array];
-
-		// 12 格：6 位置 + 词法器 + 编码 + EOL + INS + 缩放 + 大小
-		NSArray<NSNumber *> *widths = @[@0, @64, @64, @64, @52, @44, @0, @110, @56, @44, @34, @40, @56];
-		NSView *prev = nil;
-		for (NSUInteger i = 0; i < widths.count; i++) {
-			NSTextField *f = [NSTextField labelWithString:@""];
-			f.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
-			f.textColor = [NSColor labelColor];
-			f.alignment = (i == 6 || i == 7) ? NSTextAlignmentCenter : NSTextAlignmentCenter;
-			f.lineBreakMode = NSLineBreakByClipping;
-			f.translatesAutoresizingMaskIntoConstraints = NO;
-			[self addSubview:f];
-			[f.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
-			[f.heightAnchor constraintEqualToConstant:16].active = YES;
-			if (widths[i].doubleValue > 0) {
-				[f.widthAnchor constraintEqualToConstant:widths[i].doubleValue].active = YES;
-			}
-			// 分隔线（Windows 状态栏格线）
-			if (i > 0) {
-				NSView *sep = [[NSView alloc] initWithFrame:NSZeroRect];
-				sep.wantsLayer = YES;
-				sep.layer.backgroundColor = [NSColor separatorColor].CGColor;
-				sep.translatesAutoresizingMaskIntoConstraints = NO;
-				[self addSubview:sep];
-				[sep.widthAnchor constraintEqualToConstant:1].active = YES;
-				[sep.heightAnchor constraintEqualToConstant:14].active = YES;
-				[sep.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
-				[prev.trailingAnchor constraintEqualToAnchor:sep.leadingAnchor constant:-2].active = YES;
-				[f.leadingAnchor constraintEqualToAnchor:sep.trailingAnchor constant:2].active = YES;
-			}
-			if (!prev) {
-				[self.leadingAnchor constraintEqualToAnchor:f.leadingAnchor constant:-6].active = YES;
-			}
-			[_cells addObject:f];
-			prev = f;
-		}
-		[self.trailingAnchor constraintGreaterThanOrEqualToAnchor:prev.trailingAnchor constant:6].active = YES;
+		[self buildCells];
 	}
 	return self;
+}
+
+// 中文标签比英文缩写宽，格子宽度按语言调整
+- (NSArray<NSNumber *> *)widthsForLanguage {
+	if (NPLanguageGet() == NPLanguageChinese) {
+		return @[@0, @72, @72, @86, @66, @56, @0, @110, @56, @44, @34, @40, @56];
+	}
+	return @[@0, @64, @64, @64, @52, @44, @0, @110, @56, @44, @34, @40, @56];
+}
+
+- (void)buildCells {
+	for (NSView *v in [self.subviews copy]) [v removeFromSuperview];
+	[_cells removeAllObjects];
+
+	NSArray<NSNumber *> *widths = [self widthsForLanguage];
+	NSView *prev = nil;
+	for (NSUInteger i = 0; i < widths.count; i++) {
+		NSTextField *f = [NSTextField labelWithString:@""];
+		f.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
+		f.textColor = [NSColor labelColor];
+		f.alignment = NSTextAlignmentCenter;
+		f.lineBreakMode = NSLineBreakByClipping;
+		f.translatesAutoresizingMaskIntoConstraints = NO;
+		[self addSubview:f];
+		[f.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
+		[f.heightAnchor constraintEqualToConstant:16].active = YES;
+		if (widths[i].doubleValue > 0) {
+			[f.widthAnchor constraintEqualToConstant:widths[i].doubleValue].active = YES;
+		}
+		if (i > 0) {
+			NSView *sep = [[NSView alloc] initWithFrame:NSZeroRect];
+			sep.wantsLayer = YES;
+			sep.layer.backgroundColor = [NSColor separatorColor].CGColor;
+			sep.translatesAutoresizingMaskIntoConstraints = NO;
+			[self addSubview:sep];
+			[sep.widthAnchor constraintEqualToConstant:1].active = YES;
+			[sep.heightAnchor constraintEqualToConstant:14].active = YES;
+			[sep.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
+			[prev.trailingAnchor constraintEqualToAnchor:sep.leadingAnchor constant:-2].active = YES;
+			[f.leadingAnchor constraintEqualToAnchor:sep.trailingAnchor constant:2].active = YES;
+		}
+		if (!prev) {
+			[self.leadingAnchor constraintEqualToAnchor:f.leadingAnchor constant:-6].active = YES;
+		}
+		[_cells addObject:f];
+		prev = f;
+	}
+	[self.trailingAnchor constraintGreaterThanOrEqualToAnchor:prev.trailingAnchor constant:6].active = YES;
+}
+
+// 切换语言后重建格子
+- (void)applyLanguage {
+	[self buildCells];
 }
 
 - (NSTextField *)cellAt:(NSUInteger)i {
@@ -112,20 +130,20 @@ static NSString *WStr2(const wchar_t *ws) {
 	}
 
 	// Ln / Col / Ch / Sel / SelLn / Fnd
-	[self cellAt:0].stringValue = [NSString stringWithFormat:@"Ln %@ / %@",
+	[self cellAt:0].stringValue = [NSString stringWithFormat:NPL(@"Ln %@ / %@"),
 		Num(line + 1), Num(lines)];
-	[self cellAt:1].stringValue = [NSString stringWithFormat:@"Col %@ / %@",
+	[self cellAt:1].stringValue = [NSString stringWithFormat:NPL(@"Col %@ / %@"),
 		Num(col + 1), Num(lineLen + 1)];
-	[self cellAt:2].stringValue = [NSString stringWithFormat:@"Ch %@ / %@",
+	[self cellAt:2].stringValue = [NSString stringWithFormat:NPL(@"Ch %@ / %@"),
 		Num(pos + 1), Num([e message:SCI_GETLENGTH] + 1)];
-	[self cellAt:3].stringValue = [NSString stringWithFormat:@"Sel %@ / %@",
+	[self cellAt:3].stringValue = [NSString stringWithFormat:NPL(@"Sel %@ / %@"),
 		Num(selBytes), Num(selChars)];
-	[self cellAt:4].stringValue = [NSString stringWithFormat:@"SelLn %@", Num(selLines)];
-	[self cellAt:5].stringValue = @"Fnd 0";
+	[self cellAt:4].stringValue = [NSString stringWithFormat:NPL(@"SelLn %@"), Num(selLines)];
+	[self cellAt:5].stringValue = NPL(@"Fnd 0");
 
 	// 词法器名
 	const EDITLEXER *lex = doc.currentLexer;
-	[self cellAt:6].stringValue = lex ? WStr2(lex->pszName) : @"Text File";
+	[self cellAt:6].stringValue = lex ? WStr2(lex->pszName) : NPL(@"Text File");
 
 	// 编码
 	[self cellAt:7].stringValue = doc.currentEncoding ?: @"UTF-8";
@@ -137,7 +155,7 @@ static NSString *WStr2(const wchar_t *ws) {
 
 	// INS/OVR
 	const BOOL ovr = [e message:SCI_GETOVERTYPE];
-	[self cellAt:9].stringValue = ovr ? @"OVR" : @"INS";
+	[self cellAt:9].stringValue = ovr ? NPL(@"OVR") : NPL(@"INS");
 
 	// 缩放
 	const long zoom = [e message:SCI_GETZOOM];   // fork: 百分比（100 = 默认）

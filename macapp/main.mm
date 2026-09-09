@@ -11,11 +11,21 @@
 #import "MainWindowController.h"
 #import "EditorDocument.h"
 #import "NPTheme.h"
+#import "NPLocalization.h"
 
 static void DumpViewTree(NSView *v, int depth, NSMutableString *tree) {
-	[tree appendFormat:@"%@%@ f=%@ tam=%d\n", [[NSString alloc] initWithFormat:@"%*s", depth*2, ""],
-		NSStringFromClass(v.class), NSStringFromRect(v.frame), (int)v.translatesAutoresizingMaskIntoConstraints];
+	[tree appendFormat:@"%@%@ f=%@ tam=%d hidden=%d\n", [[NSString alloc] initWithFormat:@"%*s", depth*2, ""],
+		NSStringFromClass(v.class), NSStringFromRect(v.frame), (int)v.translatesAutoresizingMaskIntoConstraints,
+		(int)v.hidden];
 	for (NSView *sub in v.subviews) DumpViewTree(sub, depth + 1, tree);
+}
+
+static void DumpMenuTree(NSMenu *m, int depth, NSMutableString *out) {
+	for (NSMenuItem *it in m.itemArray) {
+		if (it.isSeparatorItem) continue;
+		[out appendFormat:@"%*s%@\n", depth * 2, "", it.title];
+		if (it.submenu) DumpMenuTree(it.submenu, depth + 1, out);
+	}
 }
 
 static bool ArgPresent(int argc, const char *argv[], const char *key) {
@@ -67,6 +77,18 @@ int main(int argc, const char *argv[]) {
 		NSApplication *app = [NSApplication sharedApplication];
 		[app setActivationPolicy:NSApplicationActivationPolicyRegular];
 
+		// 关闭 macOS「按住键出重音候选」：否则按住字母键只出一个字（数字不受影响）
+		// 与 VS Code / iTerm 等做法一致，只写本应用域，不动全局设置
+		NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+		if ([ud objectForKey:@"ApplePressAndHoldEnabled"] == nil) {
+			[ud setBool:NO forKey:@"ApplePressAndHoldEnabled"];
+		}
+
+		// --lang zh|en：进程内覆盖界面语言，不写盘（测试用）
+		if (const char *lg = ArgValue(argc, argv, "--lang")) {
+			NPLanguageOverrideForTesting(strcmp(lg, "en") == 0 ? NPLanguageEnglish : NPLanguageChinese);
+		}
+
 		// 恢复上次的主题模式（跟随系统 / 亮 / 暗）
 		NPThemeModeSet(NPThemeModeGet());
 
@@ -100,6 +122,13 @@ int main(int argc, const char *argv[]) {
 
 		InjectTestContent(argc, argv, controller);
 
+		// --findpanel：打开查找/替换面板（配合 --shot 验证面板文案）
+		if (ArgPresent(argc, argv, "--findpanel")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				[controller performSelector:NSSelectorFromString(@"searchReplace")];
+			});
+		}
 		if (ArgValue(argc, argv, "--shot")) {
 			double delay = 3.0;
 			if (const char *d = ArgValue(argc, argv, "--delay")) delay = atof(d);
@@ -130,6 +159,54 @@ int main(int argc, const char *argv[]) {
 				}
 				[NSApp terminate:nil];
 			});
+		}
+		// --dumpmenu：打印菜单树（校验界面语言）
+		if (ArgPresent(argc, argv, "--dumpmenu")) {
+			NSMutableString *out = [NSMutableString string];
+			DumpMenuTree(NSApp.mainMenu, 0, out);
+			printf("%s", out.UTF8String);
+			fflush(stdout);
+			[NSApp terminate:nil];
+		}
+		// --holdtest：注入一个不抬起的 keyDown，检查是否弹出重音候选窗口（PressAndHold）
+		if (ArgPresent(argc, argv, "--holdtest")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+				CGEventRef dn = CGEventCreateKeyboardEvent(src, (CGKeyCode)0, true);
+				CGEventPost(kCGHIDEventTap, dn);
+				CFRelease(dn);
+				if (src) CFRelease(src);
+			});
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6.5 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				NSMutableString *ws = [NSMutableString string];
+				for (NSWindow *w in NSApp.windows) {
+					[ws appendFormat:@"%@(lvl=%ld vis=%d) ", NSStringFromClass([w class]),
+						(long)w.level, (int)w.isVisible];
+				}
+				NSLog(@"[hold] pref=%d windows: %@", (int)[[NSUserDefaults standardUserDefaults]
+					boolForKey:@"ApplePressAndHoldEnabled"], ws);
+				CGEventRef up = CGEventCreateKeyboardEvent(NULL, (CGKeyCode)0, false);
+				CGEventPost(kCGHIDEventTap, up);
+				CFRelease(up);
+				EditorDocument *d = controller.editorDocument;
+				NSLog(@"[hold] len=%ld content=%@", (long)[d.editor message:SCI_GETLENGTH], [d.editor string]);
+				[NSApp terminate:nil];
+			});
+		}
+		// --langswitchtest：运行时切换语言，校验菜单/状态栏即时更新
+		if (ArgPresent(argc, argv, "--langswitchtest")) {
+			NSMutableString *out = [NSMutableString string];
+			[controller languageEnglish];
+			[out appendFormat:@"EN: %@ | %@ | %@\n", NSApp.mainMenu.itemArray[1].title,
+				NSApp.mainMenu.itemArray[2].title, [controller.editorDocument windowTitle]];
+			[controller languageChinese];
+			[out appendFormat:@"ZH: %@ | %@ | %@\n", NSApp.mainMenu.itemArray[1].title,
+				NSApp.mainMenu.itemArray[2].title, [controller.editorDocument windowTitle]];
+			printf("%s", out.UTF8String);
+			fflush(stdout);
+			[NSApp terminate:nil];
 		}
 		// --themeswitchtest：依次执行 Scheme 菜单三个动作，校验模式与编辑器主题，结束前还原
 		if (ArgPresent(argc, argv, "--themeswitchtest")) {

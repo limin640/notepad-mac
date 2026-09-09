@@ -74,11 +74,12 @@ add_executable(Notepad4 MACOSX_BUNDLE
     macapp/FindReplacePanel.mm
     macapp/StatusBarView.mm
     macapp/NPTheme.mm
+    macapp/NPLocalization.mm
 )
 set_source_files_properties(
     macapp/main.mm macapp/MainWindowController.mm macapp/EditorDocument.mm
     macapp/LexerRegistry.mm macapp/FindReplacePanel.mm macapp/StatusBarView.mm
-    macapp/NPTheme.mm
+    macapp/NPTheme.mm macapp/NPLocalization.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc"
 )
 target_include_directories(Notepad4 PRIVATE

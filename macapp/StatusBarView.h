@@ -5,6 +5,7 @@
 
 @interface StatusBarView : NSView
 
+- (void)applyLanguage;   // 切换界面语言后重建文本
 - (void)updateForDocument:(nullable EditorDocument *)doc;
 
 @property (nonatomic, readonly) NSTextField *posField;      // 行,列 (字符,选择)
