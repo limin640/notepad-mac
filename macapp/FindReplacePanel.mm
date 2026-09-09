@@ -92,6 +92,8 @@
 	self.replaceField.stringValue = r ?: @"";
 }
 
+- (NSString *)currentFindText { return self.findField.stringValue ?: @""; }
+
 - (void)attachToWindow:(NSWindow *)window {
 	self.hostWindow = window;
 	self.translatesAutoresizingMaskIntoConstraints = NO;

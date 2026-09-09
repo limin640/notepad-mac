@@ -189,7 +189,11 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 }
 
 - (BOOL)autocEnabled {
-	return _keywordsForAutoc != nil;
+	// 设置 > 自动补全设置：输入时自动补全（默认开）
+	if (![[NSUserDefaults standardUserDefaults] objectForKey:@"NP4AutoCompleteOnTyping"])
+		return _keywordsForAutoc != nil;
+	return _keywordsForAutoc != nil
+		&& [[NSUserDefaults standardUserDefaults] boolForKey:@"NP4AutoCompleteOnTyping"];
 }
 
 - (NSString *)editorStringFrom:(sptr_t)start length:(sptr_t)len {
@@ -244,29 +248,28 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	return YES;
 }
 
-- (BOOL)saveToURL:(NSURL *)url error:(NSError **)error {
+- (BOOL)writeContentsToURL:(NSURL *)url updateIdentity:(BOOL)update error:(NSError **)error {
 	NSString *text = [self.editor string];
 	NSData *data = nil;
 	if ([_usedEncoding isEqualToString:@"UTF-8"]) {
 		data = [text dataUsingEncoding:NSUTF8StringEncoding];
 	} else if ([_usedEncoding isEqualToString:@"UTF-16LE"]) {
-	 NSData *body = [text dataUsingEncoding:NSUTF16LittleEndianStringEncoding];
-	 data = [[[NSData alloc] initWithBytes:"\xFF\xFE" length:2] mutableCopy];
-	 NSMutableData *md = [NSMutableData dataWithBytes:"\xFF\xFE" length:2];
-	 [md appendData:body];
-	 data = md;
+		NSData *body = [text dataUsingEncoding:NSUTF16LittleEndianStringEncoding];
+		NSMutableData *md = [NSMutableData dataWithBytes:"\xFF\xFE" length:2];
+		[md appendData:body];
+		data = md;
 	} else if ([_usedEncoding isEqualToString:@"UTF-16BE"]) {
-	 NSMutableData *md = [NSMutableData dataWithBytes:"\xFE\xFF" length:2];
-	 [md appendData:[text dataUsingEncoding:NSUTF16BigEndianStringEncoding]];
-	 data = md;
+		NSMutableData *md = [NSMutableData dataWithBytes:"\xFE\xFF" length:2];
+		[md appendData:[text dataUsingEncoding:NSUTF16BigEndianStringEncoding]];
+		data = md;
 	} else if ([_usedEncoding isEqualToString:@"GB18030"]) {
-	 data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000)];
+		data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000)];
 	} else if ([_usedEncoding isEqualToString:@"BIG5"]) {
-	 data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingBig5)];
+		data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingBig5)];
 	} else if ([_usedEncoding isEqualToString:@"Shift-JIS"]) {
-	 data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingShiftJIS)];
+		data = [text dataUsingEncoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingShiftJIS)];
 	} else {
-	 data = [text dataUsingEncoding:NSISOLatin1StringEncoding];
+		data = [text dataUsingEncoding:NSISOLatin1StringEncoding];
 	}
 	if (!data) {
 		if (error) {
@@ -277,14 +280,46 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	}
 	NSError *writeErr = nil;
 	BOOL ok = [data writeToURL:url options:NSAtomicWrite error:&writeErr];
-	if (ok) {
+	if (ok && update) {
 		_fileURL = url;
 		_tabTitle = url.lastPathComponent;
 		[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
-	} else if (error) {
+	} else if (!ok && error) {
 		*error = writeErr;
 	}
 	return ok;
+}
+
+- (BOOL)saveToURL:(NSURL *)url error:(NSError **)error {
+	return [self writeContentsToURL:url updateIdentity:YES error:error];
+}
+
+- (void)completeWord {
+	const sptr_t pos = [_editor message:SCI_GETCURRENTPOS];
+	const sptr_t wordStart = [_editor message:SCI_WORDSTARTPOSITION wParam:pos lParam:YES];
+	sptr_t len = pos - wordStart;
+	if (len < 0) len = 0;
+	NSString *root = (len > 0) ? [self editorStringFrom:wordStart length:len] : @"";
+	NSMutableOrderedSet *set = [NSMutableOrderedSet orderedSet];
+	if (root.length) [set addObjectsFromArray:[self autocompleteCandidates:root]];
+	else if (_keywordsForAutoc.count) [set addObjectsFromArray:_keywordsForAutoc];
+	NSString *all = [_editor string] ?: @"";
+	if (all.length) {
+		NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:@"[A-Za-z_][A-Za-z0-9_]*"
+			options:0 error:nil];
+		[re enumerateMatchesInString:all options:0 range:NSMakeRange(0, all.length)
+			usingBlock:^(NSTextCheckingResult *m, NSMatchingFlags, BOOL *stop) {
+				NSString *w = [all substringWithRange:m.range];
+				if (w.length <= root.length) return;
+				if (root.length && ![w.lowercaseString hasPrefix:root.lowercaseString]) return;
+				[set addObject:w];
+			}];
+	}
+	NSArray *cands = set.array;
+	if (cands.count > 40) cands = [cands subarrayWithRange:NSMakeRange(0, 40)];
+	if (cands.count < 1) return;
+	NSString *list = [cands componentsJoinedByString:@" "];
+	[_editor message:SCI_AUTOCSHOW wParam:len lParam:(sptr_t)list.UTF8String];
 }
 
 - (void)applyLexerForExtension:(NSString *)ext {

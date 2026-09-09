@@ -17,6 +17,9 @@ struct EDITLEXER;
 
 - (BOOL)loadFromURL:(NSURL *)url error:(NSError * _Nullable * _Nullable)error;
 - (BOOL)saveToURL:(NSURL *)url error:(NSError * _Nullable * _Nullable)error;
+// updateIdentity=NO：备份/副本写出，不改当前路径
+- (BOOL)writeContentsToURL:(NSURL *)url updateIdentity:(BOOL)update error:(NSError * _Nullable * _Nullable)error;
+- (void)completeWord;
 
 - (void)applyLexerForExtension:(nullable NSString *)ext;
 

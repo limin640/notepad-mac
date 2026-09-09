@@ -13,6 +13,16 @@
 @property (nonatomic) BOOL borderAtTop;      // 状态栏顶部描边
 @end
 
+@interface NPRootView : NSView
+@property (nonatomic, weak) MainWindowController *controller;
+@end
+@implementation NPRootView
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+	if ([self.controller handleKeyEquivalent:event]) return YES;
+	return [super performKeyEquivalent:event];
+}
+@end
+
 // 工具栏按钮：只做命中测试，图标由 NPChromeView 统一绘制
 @interface NPImageButton : NSView
 @property (nonatomic, strong) NSImage *icon;
@@ -63,6 +73,12 @@
 	NSMenuItem *_wordWrapItem;
 	NSMenuItem *_lineNumbersItem;
 	StatusBarView *_statusBar;
+	NSView *_menuBar;
+	NSMutableArray<NSMenu *> *_inWindowMenus;
+	NSMutableArray<NSButton *> *_menuBarButtons;
+	id _keyMonitor;
+	NSMenu *_recentMenu;
+	NSView *_toolBar;
 	EditorDocument *_document;
 	NSMenuItem *_langChineseItem;
 	NSMenuItem *_langEnglishItem;
@@ -92,6 +108,8 @@
 		[self updateWindowTitle];
 		[NSApp addObserver:self forKeyPath:@"effectiveAppearance"
 			options:NSKeyValueObservingOptionNew context:nullptr];
+		[self installKeyEquivalentMonitor];
+		[win makeFirstResponder:_document.editor.content];
 	}
 	return self;
 }
@@ -103,12 +121,20 @@
 #pragma mark - 布局（工具栏 / 编辑器 / 状态栏，单文档无标签）
 
 - (void)buildUI:(NSWindow *)win {
-	NSView *root = [[NSView alloc] initWithFrame:win.contentView.bounds];
+	NPRootView *root = [[NPRootView alloc] initWithFrame:win.contentView.bounds];
 	root.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+	root.controller = self;
 	win.contentView = root;
+
+	NPChromeView *mb = [[NPChromeView alloc] initWithFrame:NSMakeRect(0, 0, 900, 22)];
+	mb.borderAtBottom = NO;
+	mb.translatesAutoresizingMaskIntoConstraints = NO;
+	[root addSubview:mb];
+	_menuBar = mb;
 
 	// ---- 工具栏：原版位图图标 + DefaultToolbarButtons 顺序 ----
 	NPChromeView *bar = [[NPChromeView alloc] initWithFrame:NSMakeRect(0, 0, 900, 26)];
+	_toolBar = bar;
 	bar.borderAtBottom = YES;
 	bar.translatesAutoresizingMaskIntoConstraints = NO;
 	[root addSubview:bar];
@@ -210,9 +236,13 @@
 	[root addSubview:_statusBar];
 
 	// 约束
+	[root.leadingAnchor constraintEqualToAnchor:mb.leadingAnchor].active = YES;
+	[root.trailingAnchor constraintEqualToAnchor:mb.trailingAnchor].active = YES;
+	[root.topAnchor constraintEqualToAnchor:mb.topAnchor].active = YES;
+	[mb.heightAnchor constraintEqualToConstant:22].active = YES;
+	[mb.bottomAnchor constraintEqualToAnchor:bar.topAnchor].active = YES;
 	[root.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor].active = YES;
-	[root.topAnchor constraintEqualToAnchor:bar.topAnchor].active = YES;
 	[bar.heightAnchor constraintEqualToConstant:26].active = YES;
 
 	[root.leadingAnchor constraintEqualToAnchor:_editorHost.leadingAnchor].active = YES;
@@ -277,8 +307,8 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MSep(file);
 	NSMenuItem *fm = MI(file, NPL(@"File Mode"), nil, @"", 0);
 	NSMenu *fms = M(NPL(@""));
-	MI(fms, NPL(@"Read Only File"), @selector(nyi), @"", 0);
-	MI(fms, NPL(@"Read Only Mode\tF10"), @selector(nyi), F10, 0);
+	MI(fms, NPL(@"Read Only File"), @selector(toggleReadOnly), @"", 0);
+	MI(fms, NPL(@"Read Only Mode\tF10"), @selector(toggleReadOnly), F10, 0);
 	fm.submenu = fms;
 	MI(file, NPL(@"Revert\tF5"), @selector(fileRevert), F5, 0);
 	NSMenuItem *rl = MI(file, NPL(@"Reload"), nil, @"", 0);
@@ -287,12 +317,12 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MI(rls, NPL(@"As ANSI\tCtrl+Shift+A"), @selector(reloadANSI), @"", 0);
 	MI(rls, NPL(@"As GBK"), @selector(reloadGBK), @"", 0);
 	MSep(rls);
-	MI(rls, NPL(@"With Encoding...\tF8"), @selector(nyi), @"", 0);
+	MI(rls, NPL(@"With Encoding...\tF8"), @selector(reloadWithEncodingDialog), @"", 0);
 	rl.submenu = rls;
 	MSep(file);
 	NSMenuItem *enc = MI(file, NPL(@"Encoding"), nil, @"", 0);
 	NSMenu *encs = M(NPL(@""));
-	MI(encs, NPL(@"ANSI"), @selector(nyi), @"", 0).representedObject = @"ANSI";
+	MI(encs, NPL(@"ANSI"), @selector(setEncodingANSI), @"", 0).representedObject = @"ANSI";
 	MI(encs, NPL(@"UTF-8"), @selector(setEncodingUTF8), @"", 0);
 	MI(encs, NPL(@"UTF-8 BOM"), @selector(setEncodingUTF8BOM), @"", 0);
 	MI(encs, NPL(@"UTF-16LE BOM"), @selector(setEncodingUTF16LE), @"", 0);
@@ -304,50 +334,53 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MI(eols, NPL(@"Unix/macOS (LF)"), @selector(setEOLLF), @"", 0);
 	eol.submenu = eols;
 	MSep(file);
-	MI(file, NPL(@"Page Setup..."), @selector(nyi), @"", 0);
+	MI(file, NPL(@"Page Setup..."), @selector(filePageSetup), @"", 0);
 	MI(file, NPL(@"Print...\tCtrl+P"), @selector(printDocument), @"p", 0);
 	MSep(file);
 	MI(file, NPL(@"Properties..."), @selector(fileProperties), @"", 0);
 	MI(file, NPL(@"Open Containing Folder"), @selector(openContainingFolder), @"", 0);
 	MSep(file);
-	MI(file, NPL(@"Recent (History)...\tAlt+H"), @selector(nyi), @"", 0);
+	NSMenuItem *recent = MI(file, NPL(@"Recent (History)..."), nil, @"", 0);
+	_recentMenu = M(NPL(@""));
+	_recentMenu.delegate = self;
+	recent.submenu = _recentMenu;
 	MSep(file);
 	MI(file, NPL(@"Exit\tAlt+F4"), @selector(terminate), @"", 0);
 	{ NSMenuItem *_it_file = [mb addItemWithTitle:NPL(@"File") action:nil keyEquivalent:@""]; _it_file.submenu = file; }
 
 	// ===== Edit =====
 	NSMenu *edit = M(NPL(@"Edit"));
-	MI(edit, NPL(@"Undo\tCtrl+Z"), @selector(editUndo), @"z", 0);
-	MI(edit, NPL(@"Redo\tCtrl+Y"), @selector(editRedo), @"y", 0);
+	MI(edit, NPL(@"Undo\tCtrl+Z"), @selector(undo:), @"z", 0);
+	MI(edit, NPL(@"Redo\tCtrl+Y"), @selector(redo:), @"y", 0);
 	MSep(edit);
-	MI(edit, NPL(@"Cut\tCtrl+X"), @selector(editCut), @"x", 0);
-	MI(edit, NPL(@"Copy\tCtrl+C"), @selector(editCopy), @"c", 0);
-	MI(edit, NPL(@"Paste\tCtrl+V"), @selector(editPaste), @"v", 0);
+	MI(edit, NPL(@"Cut\tCtrl+X"), @selector(cut:), @"x", 0);
+	MI(edit, NPL(@"Copy\tCtrl+C"), @selector(copy:), @"c", 0);
+	MI(edit, NPL(@"Paste\tCtrl+V"), @selector(paste:), @"v", 0);
 	MI(edit, NPL(@"Delete\tDel"), @selector(editDelete), @"", 0);
-	MI(edit, NPL(@"Select All\tCtrl+A"), @selector(editSelectAll), @"a", 0);
-	MI(edit, NPL(@"Swap\tCtrl+K"), @selector(nyi), @"k", 0);
+	MI(edit, NPL(@"Select All\tCtrl+A"), @selector(selectAll:), @"a", 0);
+	MI(edit, NPL(@"Swap\tCtrl+K"), @selector(editSwap), @"k", 0);
 	MSep(edit);
 	MI(edit, NPL(@"Clear Document"), @selector(editClearDocument), @"", 0);
-	MI(edit, NPL(@"Clear Clipboard"), @selector(nyi), @"", 0);
+	MI(edit, NPL(@"Clear Clipboard"), @selector(editClearClipboard), @"", 0);
 	NSMenuItem *cc = MI(edit, NPL(@"Copy to Clipboard"), nil, @"", 0);
 	NSMenu *ccs = M(NPL(@""));
-	MI(ccs, NPL(@"File Name"), @selector(nyi), @"", 0);
-	MI(ccs, NPL(@"Full Path Name\tAlt+Shift+F9"), @selector(nyi), @"", 0);
+	MI(ccs, NPL(@"File Name"), @selector(copyFileName), @"", 0);
+	MI(ccs, NPL(@"Full Path Name\tAlt+Shift+F9"), @selector(copyFullPath), @"", 0);
 	MSep(ccs);
-	MI(ccs, NPL(@"Copy All\tAlt+A"), @selector(nyi), @"a", NSEventModifierFlagOption);
-	MI(ccs, NPL(@"Copy as RTF"), @selector(nyi), @"", 0);
+	MI(ccs, NPL(@"Copy All\tAlt+A"), @selector(copyAll), @"a", NSEventModifierFlagOption);
+	MI(ccs, NPL(@"Copy as RTF"), @selector(copyAsRTF), @"", 0);
 	cc.submenu = ccs;
 	MSep(edit);
 	NSMenuItem *sel = MI(edit, NPL(@"Selection"), nil, @"", 0);
 	NSMenu *sels = M(NPL(@""));
-	MI(sels, NPL(@"Duplicate\tAlt+D"), @selector(nyi), @"d", NSEventModifierFlagOption);
+	MI(sels, NPL(@"Duplicate\tAlt+D"), @selector(editDuplicate), @"d", NSEventModifierFlagOption);
 	MSep(sels);
 	MI(sels, NPL(@"Toggle Line Comment\tCtrl+/"), @selector(editLineComment), @"/", 0);
 	MI(sels, NPL(@"Indent\tTab"), @selector(editIndent), @"", 0);
 	MI(sels, NPL(@"Unindent\tShift+Tab"), @selector(editUnindent), @"", 0);
 	MSep(sels);
 	MI(sels, NPL(@"Strip Trailing Blanks\tAlt+T"), @selector(editTrimTrailing), @"t", NSEventModifierFlagOption);
-	MI(sels, NPL(@"Remove Blank Lines\tAlt+R"), @selector(nyi), @"r", NSEventModifierFlagOption);
+	MI(sels, NPL(@"Remove Blank Lines\tAlt+R"), @selector(editRemoveBlankLines), @"r", NSEventModifierFlagOption);
 	sel.submenu = sels;
 	NSMenuItem *lines = MI(edit, NPL(@"Lines"), nil, @"", 0);
 	NSMenu *lss = M(NPL(@""));
@@ -367,35 +400,35 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	NSMenu *cvs = M(NPL(@""));
 	MI(cvs, NPL(@"UPPER CASE\tCtrl+Shift+U"), @selector(editUpper), @"u", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MI(cvs, NPL(@"lower case\tCtrl+U"), @selector(editLower), @"u", 0);
-	MI(cvs, NPL(@"Invert Case"), @selector(nyi), @"", 0);
-	MI(cvs, NPL(@"Title Case"), @selector(nyi), @"", 0);
+	MI(cvs, NPL(@"Invert Case"), @selector(editInvertCase), @"", 0);
+	MI(cvs, NPL(@"Title Case"), @selector(editTitleCase), @"", 0);
 	MSep(cvs);
-	MI(cvs, NPL(@"Tabify Selection (Indent)\tCtrl+Alt+T"), @selector(nyi), @"t", NSEventModifierFlagCommand|NSEventModifierFlagOption);
-	MI(cvs, NPL(@"Untabify Selection (Indent)\tCtrl+Alt+S"), @selector(nyi), @"s", NSEventModifierFlagCommand|NSEventModifierFlagOption);
+	MI(cvs, NPL(@"Tabify Selection (Indent)\tCtrl+Alt+T"), @selector(editTabify), @"t", NSEventModifierFlagCommand|NSEventModifierFlagOption);
+	MI(cvs, NPL(@"Untabify Selection (Indent)\tCtrl+Alt+S"), @selector(editUntabify), @"s", NSEventModifierFlagCommand|NSEventModifierFlagOption);
 	conv.submenu = cvs;
 	NSMenuItem *ins = MI(edit, NPL(@"Insert"), nil, @"", 0);
 	NSMenu *insm = M(NPL(@""));
 	MI(insm, NPL(@"Complete Word\tAlt+/"), @selector(editCompleteWord), @"/", NSEventModifierFlagOption);
 	MSep(insm);
 	MI(insm, NPL(@"New GUID"), @selector(insertGUID), @"", 0);
-	MI(insm, NPL(@"File Name"), @selector(nyi), @"", 0);
+	MI(insm, NPL(@"File Name"), @selector(insertFileName), @"", 0);
 	MSep(insm);
 	MI(insm, NPL(@"Current Date Time"), @selector(insertDateTime), @"", 0);
-	MI(insm, NPL(@"Unix Timestamp"), @selector(nyi), @"", 0);
+	MI(insm, NPL(@"Unix Timestamp"), @selector(insertUnixTimestamp), @"", 0);
 	ins.submenu = insm;
 	{ NSMenuItem *_it_edit = [mb addItemWithTitle:NPL(@"Edit") action:nil keyEquivalent:@""]; _it_edit.submenu = edit; }
 
 	// ===== Search =====
 	NSMenu *search = M(NPL(@"Search"));
 	MI(search, NPL(@"Find...\tCtrl+F"), @selector(searchFind), @"f", 0);
-	MI(search, NPL(@"Save Find Text"), @selector(nyi), @"", 0);
+	MI(search, NPL(@"Save Find Text"), @selector(searchSaveFindText), @"", 0);
 	MI(search, NPL(@"Find Next\tF3"), @selector(searchFindNext), F3, 0);
 	MI(search, NPL(@"Find Previous\tShift+F3"), @selector(searchFindPrev), F3, NSEventModifierFlagShift);
 	MI(search, NPL(@"Replace...\tCtrl+H"), @selector(searchReplace), @"h", 0);
-	MI(search, NPL(@"Replace Next\tF4"), @selector(nyi), [NSString stringWithFormat:@"%d", NSF4FunctionKey], 0);
+	MI(search, NPL(@"Replace Next\tF4"), @selector(searchReplaceNext), [NSString stringWithFormat:@"%d", NSF4FunctionKey], 0);
 	MSep(search);
-	MI(search, NPL(@"Find Matching Brace\tCtrl+B"), @selector(nyi), @"b", 0);
-	MI(search, NPL(@"Select Word"), @selector(nyi), @"", 0);
+	MI(search, NPL(@"Find Matching Brace\tCtrl+B"), @selector(searchFindMatchingBrace), @"b", 0);
+	MI(search, NPL(@"Select Word"), @selector(searchSelectWord), @"", 0);
 	MSep(search);
 	NSMenuItem *bm = MI(search, NPL(@"Bookmarks"), nil, @"", 0);
 	NSMenu *bms = M(NPL(@""));
@@ -416,17 +449,17 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	NSMenu *view = M(NPL(@"View"));
 	_wordWrapItem = MI(view, NPL(@"Word Wrap\tCtrl+Shift+W"), @selector(viewWordWrap), @"w", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	_wordWrapItem.state = NSControlStateValueOff;
-	MI(view, NPL(@"Long Line Marker\tCtrl+Shift+L"), @selector(nyi), @"l", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Long Line Marker\tCtrl+Shift+L"), @selector(viewLongLineMarker), @"l", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MI(view, NPL(@"Indentation Guides\tCtrl+Shift+G"), @selector(viewIndentGuides), @"g", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
 	MI(view, NPL(@"Show Whitespace\tCtrl+Shift+8"), @selector(viewWhitespace), @"8", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MI(view, NPL(@"Show Line Endings\tCtrl+Shift+9"), @selector(viewEOLs), @"9", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
-	MI(view, NPL(@"Visual Brace Matching\tCtrl+Shift+V"), @selector(nyi), @"v", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Visual Brace Matching\tCtrl+Shift+V"), @selector(viewBraceMatch), @"v", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
 	_lineNumbersItem = MI(view, NPL(@"Line Numbers\tCtrl+Shift+N"), @selector(viewLineNumbers), @"n", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	_lineNumbersItem.state = NSControlStateValueOn;
-	MI(view, NPL(@"Bookmark Margin\tCtrl+Shift+M"), @selector(nyi), @"m", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	MI(view, NPL(@"Bookmark Margin\tCtrl+Shift+M"), @selector(viewBookmarkMargin), @"m", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
 	MI(view, NPL(@"Show Code Folding"), @selector(viewCodeFolding), @"", 0);
 	NSMenuItem *zm = MI(view, NPL(@"Zoom"), nil, @"", 0);
@@ -454,9 +487,9 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 
 	// ===== Settings =====
 	NSMenu *settings = M(NPL(@"Settings"));
-	MI(settings, NPL(@"Insert Tabs as Spaces"), @selector(nyi), @"", 0);
-	MI(settings, NPL(@"Tab Settings...\tCtrl+T"), @selector(nyi), @"t", 0);
-	MI(settings, NPL(@"Auto Completion Settings..."), @selector(nyi), @"", 0);
+	MI(settings, NPL(@"Insert Tabs as Spaces"), @selector(settingsUseTabs), @"", 0);
+	MI(settings, NPL(@"Tab Settings...\tCtrl+T"), @selector(settingsTabSettings), @"t", 0);
+	MI(settings, NPL(@"Auto Completion Settings..."), @selector(settingsAutoCompletion), @"", 0);
 	MSep(settings);
 	NSMenuItem *lang = MI(settings, NPL(@"Language"), nil, @"", 0);
 	NSMenu *langs = M(NPL(@""));
@@ -466,37 +499,37 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[self updateLanguageMenuState];
 	NSMenuItem *ap = MI(settings, NPL(@"Appearance"), nil, @"", 0);
 	NSMenu *aps = M(NPL(@""));
-	MI(aps, NPL(@"Show Menu\tAlt+F11"), @selector(nyi), @"", 0);
-	MI(aps, NPL(@"Show Toolbar\tCtrl+F11"), @selector(nyi), @"", 0);
+	MI(aps, NPL(@"Show Menu\tAlt+F11"), @selector(toggleMenuBar), @"", 0);
+	MI(aps, NPL(@"Show Toolbar\tCtrl+F11"), @selector(toggleToolbar), @"", 0);
 	MI(aps, NPL(@"Show Statusbar\tShift+F11"), @selector(toggleStatusBar), @"", 0);
 	ap.submenu = aps;
-	MI(settings, NPL(@"Save Settings On Exit"), @selector(nyi), @"", 0);
-	MI(settings, NPL(@"Save Settings Now\tF7"), @selector(nyi), [NSString stringWithFormat:@"%d", NSF7FunctionKey], 0);
+	MI(settings, NPL(@"Save Settings On Exit"), @selector(settingsSaveOnExit), @"", 0);
+	MI(settings, NPL(@"Save Settings Now\tF7"), @selector(settingsSaveNow), [NSString stringWithFormat:@"%d", NSF7FunctionKey], 0);
 	{ NSMenuItem *_it_settings = [mb addItemWithTitle:NPL(@"Settings") action:nil keyEquivalent:@""]; _it_settings.submenu = settings; }
 
 	// ===== Tools =====
 	NSMenu *tools = M(NPL(@"Tools"));
-	MI(tools, NPL(@"Execute Document\tCtrl+L"), @selector(nyi), @"l", 0);
-	MI(tools, NPL(@"Open Document With..."), @selector(nyi), @"", 0);
-	MI(tools, NPL(@"Run Command...\tCtrl+R"), @selector(nyi), @"r", 0);
+	MI(tools, NPL(@"Execute Document\tCtrl+L"), @selector(toolsExecute), @"l", 0);
+	MI(tools, NPL(@"Open Document With..."), @selector(toolsOpenWith), @"", 0);
+	MI(tools, NPL(@"Run Command...\tCtrl+R"), @selector(toolsRunCommand), @"r", 0);
 	MSep(tools);
 	NSMenuItem *ws = MI(tools, NPL(@"Action on Selection"), nil, @"", 0);
 	NSMenu *wsm = M(NPL(@""));
-	MI(wsm, NPL(@"Open File, Folder, Link, etc."), @selector(nyi), @"", 0);
-	MI(wsm, NPL(@"Search with &Google"), @selector(nyi), @"", 0);
+	MI(wsm, NPL(@"Open File, Folder, Link, etc."), @selector(actionOpenSelection), @"", 0);
+	MI(wsm, NPL(@"Search with &Google"), @selector(actionSearchGoogle), @"", 0);
 	ws.submenu = wsm;
 	NSMenuItem *b64 = MI(tools, NPL(@"Base64"), nil, @"", 0);
 	NSMenu *b64m = M(NPL(@""));
 	MI(b64m, NPL(@"Standard Encode"), @selector(base64Encode), @"", 0);
-	MI(b64m, NPL(@"URL Safe Encode"), @selector(nyi), @"", 0);
+	MI(b64m, NPL(@"URL Safe Encode"), @selector(base64URLSafeEncode), @"", 0);
 	MI(b64m, NPL(@"Decode"), @selector(base64Decode), @"", 0);
 	b64.submenu = b64m;
 	NSMenuItem *webt = MI(tools, NPL(@"Web Tools"), nil, @"", 0);
 	NSMenu *wtm = M(NPL(@""));
 	MI(wtm, NPL(@"URL Encode\tCtrl+Shift+E"), @selector(urlEncode), @"e", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MI(wtm, NPL(@"URL Decode\tCtrl+Shift+R"), @selector(urlDecode), @"r", NSEventModifierFlagCommand|NSEventModifierFlagShift);
-	MI(wtm, NPL(@"Escape HTML/XML Chars"), @selector(nyi), @"", 0);
-	MI(wtm, NPL(@"Unescape HTML/XML Chars"), @selector(nyi), @"", 0);
+	MI(wtm, NPL(@"Escape HTML/XML Chars"), @selector(webEscapeHTML), @"", 0);
+	MI(wtm, NPL(@"Unescape HTML/XML Chars"), @selector(webUnescapeHTML), @"", 0);
 	webt.submenu = wtm;
 	{ NSMenuItem *_it_tools = [mb addItemWithTitle:NPL(@"Tools") action:nil keyEquivalent:@""]; _it_tools.submenu = tools; }
 
@@ -506,8 +539,139 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MI(help, NPL(@"About Notepad4"), @selector(orderFrontStandardAboutPanel:), @"", 0);
 	{ NSMenuItem *_it_help = [mb addItemWithTitle:NPL(@"Help") action:nil keyEquivalent:@""]; _it_help.submenu = help; }
 
-	NSApp.mainMenu = mb;
+	_inWindowMenus = [NSMutableArray arrayWithObjects:file, edit, search, view, scheme, settings, tools, help, nil];
+	NSMutableArray *titles = [NSMutableArray array];
+	for (NSMenu *m in _inWindowMenus) [titles addObject:m.title];
+	[self rebuildMenuBarButtons:titles];
+	NSApp.mainMenu = [self buildAppMenu];
 }
+
+- (NSMenu *)buildAppMenu {
+	NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Notepad4"];
+	[appMenu addItemWithTitle:NPL(@"About Notepad4") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+	[appMenu addItem:[NSMenuItem separatorItem]];
+	NSMenuItem *svc = [appMenu addItemWithTitle:NPL(@"Services") action:nil keyEquivalent:@""];
+	NSMenu *svcMenu = [[NSMenu alloc] initWithTitle:NPL(@"Services")];
+	svc.submenu = svcMenu;
+	NSApp.servicesMenu = svcMenu;
+	[appMenu addItem:[NSMenuItem separatorItem]];
+	[appMenu addItemWithTitle:NPL(@"Hide Notepad4") action:@selector(hide:) keyEquivalent:@"h"];
+	NSMenuItem *ho = [appMenu addItemWithTitle:NPL(@"Hide Others") action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
+	ho.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+	[appMenu addItemWithTitle:NPL(@"Show All") action:@selector(unhideAllApplications:) keyEquivalent:@""];
+	[appMenu addItem:[NSMenuItem separatorItem]];
+	[appMenu addItemWithTitle:NPL(@"Quit Notepad4") action:@selector(terminate:) keyEquivalent:@"q"];
+	NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+	item.submenu = appMenu;
+	NSMenu *main = [[NSMenu alloc] initWithTitle:@""];
+	[main addItem:item];
+	return main;
+}
+
+- (void)rebuildMenuBarButtons:(NSArray<NSString *> *)titles {
+	for (NSView *v in [_menuBar.subviews copy]) [v removeFromSuperview];
+	_menuBarButtons = [NSMutableArray array];
+	NSView *prev = nil;
+	for (NSUInteger i = 0; i < titles.count; i++) {
+		NSButton *b = [NSButton buttonWithTitle:titles[i] target:self action:@selector(menuBarClicked:)];
+		b.bordered = NO;
+		b.font = [NSFont systemFontOfSize:12];
+		b.contentTintColor = [NSColor labelColor];
+		b.tag = (NSInteger)i;
+		b.translatesAutoresizingMaskIntoConstraints = NO;
+		[_menuBar addSubview:b];
+		[b.centerYAnchor constraintEqualToAnchor:_menuBar.centerYAnchor].active = YES;
+		[b.heightAnchor constraintEqualToConstant:18].active = YES;
+		if (prev) [prev.trailingAnchor constraintEqualToAnchor:b.leadingAnchor constant:2].active = YES;
+		else [_menuBar.leadingAnchor constraintEqualToAnchor:b.leadingAnchor constant:-6].active = YES;
+		[_menuBarButtons addObject:b];
+		prev = b;
+	}
+	if (prev) [_menuBar.trailingAnchor constraintGreaterThanOrEqualToAnchor:prev.trailingAnchor constant:6].active = YES;
+}
+
+- (void)menuBarClicked:(NSButton *)b {
+	if (b.tag < 0 || (NSUInteger)b.tag >= _inWindowMenus.count) return;
+	NSMenu *menu = _inWindowMenus[b.tag];
+	b.wantsLayer = YES;
+	b.layer.backgroundColor = [NSColor selectedContentBackgroundColor].CGColor;
+	b.layer.cornerRadius = 4;
+	[menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, 0) inView:b];
+	b.layer.backgroundColor = NULL;
+}
+
+static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
+	const NSEventModifierFlags want = event.modifierFlags
+		& (NSEventModifierFlagCommand | NSEventModifierFlagOption
+		   | NSEventModifierFlagControl | NSEventModifierFlagShift);
+	NSString *chars = event.charactersIgnoringModifiers.lowercaseString;
+	if (chars.length == 0) return NO;
+	for (NSMenuItem *it in menu.itemArray) {
+		if (it.isSeparatorItem) continue;
+		if (it.submenu && NPInvokeMatchingItem(it.submenu, event, editTarget)) return YES;
+		if (it.keyEquivalent.length == 0 || !it.action) continue;
+		const NSEventModifierFlags have = it.keyEquivalentModifierMask
+			& (NSEventModifierFlagCommand | NSEventModifierFlagOption
+			   | NSEventModifierFlagControl | NSEventModifierFlagShift);
+		if (have != want) continue;
+		if (![it.keyEquivalent.lowercaseString isEqualToString:chars]) continue;
+		id target = it.target;
+		if (!target) {
+			SEL act = it.action;
+			if (act == @selector(selectAll:) || act == @selector(cut:)
+				|| act == @selector(copy:) || act == @selector(paste:)
+				|| act == @selector(undo:) || act == @selector(redo:)
+				|| act == @selector(delete:)) {
+				target = editTarget;
+			} else {
+				target = [NSApp targetForAction:act to:nil from:it];
+			}
+			if (!target && editTarget) target = editTarget;
+		}
+		if (!target) continue;
+		if ([target respondsToSelector:@selector(validateMenuItem:)]
+			&& ![target validateMenuItem:it]) continue;
+		return [NSApp sendAction:it.action to:target from:it];
+	}
+	return NO;
+}
+
+- (BOOL)handleKeyEquivalent:(NSEvent *)event {
+	id editTarget = _document.editor.content;
+	for (NSMenu *m in _inWindowMenus) {
+		if (NPInvokeMatchingItem(m, event, editTarget)) return YES;
+	}
+	return NO;
+}
+
+- (void)installKeyEquivalentMonitor {
+	if (_keyMonitor) return;
+	__weak typeof(self) weakSelf = self;
+	_keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+		handler:^NSEvent *(NSEvent *event) {
+			MainWindowController *s = weakSelf;
+			if (!s) return event;
+			if ([s handleKeyEquivalent:event]) return nil;
+			return event;
+		}];
+}
+
+- (NSArray<NSString *> *)inWindowMenuTitles {
+	NSMutableArray *a = [NSMutableArray array];
+	for (NSButton *b in _menuBarButtons) [a addObject:b.title ?: @""];
+	return a;
+}
+
+- (void)dumpInWindowMenus:(NSMutableString *)out {
+	for (NSMenu *m in _inWindowMenus) {
+		[out appendFormat:@"%@\n", m.title];
+		for (NSMenuItem *it in m.itemArray) {
+			if (it.isSeparatorItem) continue;
+			[out appendFormat:@"  %@\n", it.title];
+		}
+	}
+}
+
 
 - (EditorDocument *)editorDocument {
 	return _document;
@@ -560,6 +724,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 		if ([doc loadFromURL:panel.URL error:&err]) {
 			self.editorDocument = doc;
 			[self swapEditor];
+			[self noteRecentFile:panel.URL];
 		}
 	}];
 }
@@ -581,6 +746,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	if (!_document.fileURL) { [self fileSaveAs]; return YES; }
 	NSError *err = nil;
 	if (![_document saveToURL:_document.fileURL error:&err]) return NO;
+	[self noteRecentFile:_document.fileURL];
 	[self updateWindowTitle];
 	return YES;
 }
@@ -597,8 +763,21 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 		}
 	}];
 }
-- (void)fileSaveBackup {}
-- (void)fileSaveCopy {}
+- (void)fileSaveBackup {
+	if (!_document.fileURL) { [self fileSaveCopy]; return; }
+	NSURL *bak = [_document.fileURL URLByAppendingPathExtension:@"bak"];
+	NSError *err = nil;
+	[_document writeContentsToURL:bak updateIdentity:NO error:&err];
+}
+- (void)fileSaveCopy {
+	NSSavePanel *panel = [NSSavePanel savePanel];
+	panel.nameFieldStringValue = _document.tabTitle ?: @"Untitled.txt";
+	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSModalResponseOK) return;
+		NSError *err = nil;
+		[_document writeContentsToURL:panel.URL updateIdentity:NO error:&err];
+	}];
+}
 - (void)fileRevert {
 	if (_document.fileURL) {
 		[_document reloadWithEncoding:_document.currentEncoding];
@@ -647,7 +826,82 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 - (void)editDelete { [_document.editor message:SCI_CLEAR wParam:0 lParam:0]; }
 - (void)editSelectAll { [_document.editor message:SCI_SELECTALL wParam:0 lParam:0]; }
 - (void)editClearDocument { [_document.editor message:SCI_CLEARALL wParam:0 lParam:0]; }
-- (void)editLineComment { /* 需要词法器 line-comment 配置，后续接 */ }
+static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
+	if (lex && (lex->lexerAttr & LexerAttr_NoLineComment)) return nil;
+	const int lexer = lex ? lex->iLexer : SCLEX_NULL;
+	switch (lexer) {
+		case SCLEX_PYTHON: case SCLEX_PERL: case SCLEX_RUBY: case SCLEX_BASH:
+		case SCLEX_CMAKE: case SCLEX_YAML: case SCLEX_PROPERTIES:
+		case SCLEX_MAKEFILE: case SCLEX_TCL:
+		case SCLEX_POWERSHELL: case SCLEX_BATCH:
+			return @"#";
+		case SCLEX_SQL: case SCLEX_LUA:
+			return @"--";
+		case SCLEX_VISUALBASIC:
+			return @"'";
+		case SCLEX_LISP: case SCLEX_ASM:
+			return @";";
+		case SCLEX_HTML: case SCLEX_XML: case SCLEX_NULL:
+			return nil;
+		default:
+			return @"//";
+	}
+}
+- (void)editLineComment {
+	NSString *prefix = NPLineCommentPrefix(_document.currentLexer);
+	if (!prefix.length) return;
+	ScintillaView *e = _document.editor;
+	const sptr_t selStart = [e message:SCI_GETSELECTIONSTART];
+	const sptr_t selEnd = [e message:SCI_GETSELECTIONEND];
+	const sptr_t first = [e message:SCI_LINEFROMPOSITION wParam:selStart];
+	const sptr_t last = [e message:SCI_LINEFROMPOSITION wParam:(selEnd > selStart ? selEnd : selStart)];
+	BOOL allCommented = YES;
+	for (sptr_t l = first; l <= last; l++) {
+		const sptr_t ls = [e message:SCI_POSITIONFROMLINE wParam:l];
+		const sptr_t le = [e message:SCI_GETLINEENDPOSITION wParam:l];
+		if (ls == le) continue;
+		sptr_t q = ls;
+		while (q < le) {
+			const char c = (char)[e message:SCI_GETCHARAT wParam:q];
+			if (c != ' ' && c != '\t') break;
+			q++;
+		}
+		if (q == le) continue;
+		BOOL match = YES;
+		for (NSUInteger i = 0; i < prefix.length; i++) {
+			if (q + (sptr_t)i >= le || (char)[e message:SCI_GETCHARAT wParam:q + (sptr_t)i] != [prefix characterAtIndex:i]) {
+				match = NO; break;
+			}
+		}
+		if (!match) { allCommented = NO; break; }
+	}
+	[e message:SCI_BEGINUNDOACTION wParam:0 lParam:0];
+	for (sptr_t l = first; l <= last; l++) {
+		const sptr_t ls = [e message:SCI_POSITIONFROMLINE wParam:l];
+		const sptr_t le = [e message:SCI_GETLINEENDPOSITION wParam:l];
+		if (ls == le) continue;
+		sptr_t q = ls;
+		while (q < le) {
+			const char c = (char)[e message:SCI_GETCHARAT wParam:q];
+			if (c != ' ' && c != '\t') break;
+			q++;
+		}
+		if (q == le) continue;
+		if (allCommented) {
+			sptr_t del = q + (sptr_t)prefix.length;
+			if (del < le && (char)[e message:SCI_GETCHARAT wParam:del] == ' ') del++;
+			[e message:SCI_SETTARGETSTART wParam:q lParam:0];
+			[e message:SCI_SETTARGETEND wParam:del lParam:0];
+			[e message:SCI_REPLACETARGET wParam:0 lParam:(sptr_t)""];
+		} else {
+			[e message:SCI_SETTARGETSTART wParam:q lParam:0];
+			[e message:SCI_SETTARGETEND wParam:q lParam:0];
+			[e message:SCI_REPLACETARGET wParam:-1 lParam:(sptr_t)prefix.UTF8String];
+		}
+	}
+	[e message:SCI_ENDUNDOACTION wParam:0 lParam:0];
+	[self refreshStatus];
+}
 - (void)editIndent { [_document.editor message:SCI_TAB wParam:0 lParam:0]; }
 - (void)editUnindent { [_document.editor message:SCI_BACKTAB wParam:0 lParam:0]; }
 - (void)editTrimTrailing {
@@ -692,7 +946,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 }
 - (void)editUpper { [_document.editor message:SCI_UPPERCASE wParam:0 lParam:0]; }
 - (void)editLower { [_document.editor message:SCI_LOWERCASE wParam:0 lParam:0]; }
-- (void)editCompleteWord { /* 手动触发补全 */ }
+- (void)editCompleteWord { [_document completeWord]; }
 - (void)insertGUID {
 	NSString *guid = [NSUUID UUID].UUIDString.lowercaseString;
 	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)guid.UTF8String];
@@ -864,6 +1118,353 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 		return;
 	}
 	[super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+}
+
+
+#pragma mark - 原 nyi 项实现
+- (void)filePageSetup { [[NSPageLayout pageLayout] runModalWithPrintInfo:[NSPrintInfo sharedPrintInfo]]; }
+- (void)toggleReadOnly {
+	ScintillaView *e = _document.editor;
+	[e message:SCI_SETREADONLY wParam:([e message:SCI_GETREADONLY] ? 0 : 1) lParam:0];
+	[self refreshStatus];
+}
+- (void)reloadWithEncodingDialog {
+	NSAlert *a = [[NSAlert alloc] init];
+	a.messageText = NPL(@"Reload with Encoding");
+	NSPopUpButton *pop = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 26) pullsDown:NO];
+	[pop addItemsWithTitles:@[@"UTF-8", @"UTF-16LE", @"UTF-16BE", @"GB18030", @"BIG5", @"Shift-JIS", @"Latin-1"]];
+	a.accessoryView = pop;
+	[a addButtonWithTitle:NPL(@"Reload")];
+	[a addButtonWithTitle:NPL(@"Cancel")];
+	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSAlertFirstButtonReturn) return;
+		[_document reloadWithEncoding:pop.titleOfSelectedItem];
+		[self refreshStatus];
+	}];
+}
+- (void)setEncodingANSI { [_document setSaveEncoding:@"Latin-1"]; [self refreshStatus]; }
+- (void)noteRecentFile:(NSURL *)url {
+	if (!url.path.length) return;
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	NSMutableArray *list = [([d arrayForKey:@"NP4RecentFiles"] ?: @[]) mutableCopy];
+	[list removeObject:url.path];
+	[list insertObject:url.path atIndex:0];
+	if (list.count > 10) [list removeObjectsInRange:NSMakeRange(10, list.count - 10)];
+	[d setObject:list forKey:@"NP4RecentFiles"];
+}
+- (void)openRecentFile:(NSMenuItem *)item {
+	NSURL *url = [NSURL fileURLWithPath:item.representedObject];
+	EditorDocument *doc = [[EditorDocument alloc] initWithFileURL:url contents:@""];
+	NSError *err = nil;
+	if ([doc loadFromURL:url error:&err]) {
+		self.editorDocument = doc;
+		[self swapEditor];
+		[self noteRecentFile:url];
+	}
+}
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+	if (menu != _recentMenu) return;
+	[menu removeAllItems];
+	NSArray<NSString *> *list = [[NSUserDefaults standardUserDefaults] arrayForKey:@"NP4RecentFiles"] ?: @[];
+	if (!list.count) {
+		NSMenuItem *empty = [menu addItemWithTitle:NPL(@"No recent files") action:nil keyEquivalent:@""];
+		empty.enabled = NO;
+		return;
+	}
+	for (NSString *path in list) {
+		NSMenuItem *it = [menu addItemWithTitle:path.lastPathComponent action:@selector(openRecentFile:) keyEquivalent:@""];
+		it.target = self; it.representedObject = path; it.toolTip = path;
+	}
+}
+- (void)editSwap {
+	ScintillaView *e = _document.editor;
+	NSPasteboard *pb = [NSPasteboard generalPasteboard];
+	NSString *clip = [pb stringForType:NSPasteboardTypeString] ?: @"";
+	const sptr_t selStart = [e message:SCI_GETSELECTIONSTART];
+	const sptr_t selEnd = [e message:SCI_GETSELECTIONEND];
+	if (selStart == selEnd) {
+		if (!clip.length) return;
+		[e message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)clip.UTF8String];
+		[pb clearContents];
+	} else {
+		NSString *sel = [e selectedString] ?: @"";
+		[e message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)clip.UTF8String];
+		[pb clearContents];
+		if (sel.length) [pb setString:sel forType:NSPasteboardTypeString];
+	}
+	[self refreshStatus];
+}
+- (void)editClearClipboard { [[NSPasteboard generalPasteboard] clearContents]; }
+- (void)copyFileName {
+	NSString *name = _document.fileURL.lastPathComponent;
+	if (name) { [[NSPasteboard generalPasteboard] clearContents]; [[NSPasteboard generalPasteboard] setString:name forType:NSPasteboardTypeString]; }
+}
+- (void)copyFullPath {
+	NSString *path = _document.fileURL.path;
+	if (path) { [[NSPasteboard generalPasteboard] clearContents]; [[NSPasteboard generalPasteboard] setString:path forType:NSPasteboardTypeString]; }
+}
+- (void)copyAll { [_document.editor message:SCI_COPYRANGE wParam:0 lParam:[_document.editor message:SCI_GETLENGTH]]; }
+- (void)copyAsRTF {
+	NSString *text = [_document.editor string];
+	if (!text.length) return;
+	NSAttributedString *as = [[NSAttributedString alloc] initWithString:text attributes:@{}];
+	NSData *rtf = [as dataFromRange:NSMakeRange(0, as.length) documentAttributes:@{NSDocumentTypeDocumentAttribute: NSRTFTextDocumentType} error:nil];
+	NSPasteboard *pb = [NSPasteboard generalPasteboard];
+	[pb clearContents];
+	[pb setString:text forType:NSPasteboardTypeString];
+	if (rtf) [pb setData:rtf forType:NSRTFPboardType];
+}
+- (void)editDuplicate { [_document.editor message:SCI_SELECTIONDUPLICATE wParam:0 lParam:0]; }
+- (void)editRemoveBlankLines {
+	ScintillaView *e = _document.editor;
+	const sptr_t first = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETSELECTIONSTART]];
+	const sptr_t last = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETSELECTIONEND]];
+	[e message:SCI_BEGINUNDOACTION wParam:0 lParam:0];
+	for (sptr_t l = last; l >= first; l--) {
+		const sptr_t ls = [e message:SCI_POSITIONFROMLINE wParam:l];
+		const sptr_t le = [e message:SCI_GETLINEENDPOSITION wParam:l];
+		BOOL blank = YES;
+		for (sptr_t x = ls; x < le; x++) {
+			const char c = (char)[e message:SCI_GETCHARAT wParam:x];
+			if (c != ' ' && c != '\t') { blank = NO; break; }
+		}
+		if (!blank) continue;
+		sptr_t delEnd = le;
+		if (l < [e message:SCI_GETLINECOUNT] - 1) delEnd = [e message:SCI_POSITIONFROMLINE wParam:l + 1];
+		[e message:SCI_SETTARGETSTART wParam:ls lParam:0];
+		[e message:SCI_SETTARGETEND wParam:delEnd lParam:0];
+		[e message:SCI_REPLACETARGET wParam:0 lParam:(sptr_t)""];
+	}
+	[e message:SCI_ENDUNDOACTION wParam:0 lParam:0];
+}
+- (void)editInvertCase {
+	ScintillaView *e = _document.editor;
+	NSString *sel = [e selectedString];
+	if (!sel.length) return;
+	NSMutableString *out = [NSMutableString stringWithCapacity:sel.length];
+	for (NSUInteger i = 0; i < sel.length; i++) {
+		NSString *ch = [sel substringWithRange:NSMakeRange(i, 1)];
+		NSString *up = ch.uppercaseString, *lo = ch.lowercaseString;
+		[out appendString:[ch isEqualToString:up] ? lo : up];
+	}
+	[e message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)out.UTF8String];
+}
+- (void)editTitleCase {
+	ScintillaView *e = _document.editor;
+	NSString *sel = [e selectedString];
+	if (!sel.length) return;
+	[e message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)sel.capitalizedString.UTF8String];
+}
+- (void)convertLeadingWhitespaceToTabs:(BOOL)toTabs {
+	ScintillaView *e = _document.editor;
+	const sptr_t tabWidth = [e message:SCI_GETTABWIDTH];
+	if (tabWidth <= 0) return;
+	const sptr_t first = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETSELECTIONSTART]];
+	const sptr_t last = [e message:SCI_LINEFROMPOSITION wParam:[e message:SCI_GETSELECTIONEND]];
+	[e message:SCI_BEGINUNDOACTION wParam:0 lParam:0];
+	for (sptr_t l = first; l <= last; l++) {
+		const sptr_t ls = [e message:SCI_POSITIONFROMLINE wParam:l];
+		sptr_t x = ls;
+		while (x < [e message:SCI_GETLINEENDPOSITION wParam:l]) {
+			const char c = (char)[e message:SCI_GETCHARAT wParam:x];
+			if (c != ' ' && c != '\t') break;
+			x++;
+		}
+		if (x == ls) continue;
+		const char *raw = (const char *)[e message:SCI_GETRANGEPOINTER wParam:ls lParam:(x - ls)];
+		if (!raw) continue;
+		NSString *ws = [[NSString alloc] initWithBytes:raw length:(NSUInteger)(x - ls) encoding:NSUTF8StringEncoding];
+		if (!ws) continue;
+		NSMutableString *out = [NSMutableString string];
+		if (toTabs) {
+			sptr_t col = 0;
+			for (NSUInteger i = 0; i < ws.length; i++) {
+				if ([ws characterAtIndex:i] == '\t') { [out appendString:@"\t"]; col += tabWidth - (col % tabWidth); }
+				else { col++; [out appendString:(col % tabWidth == 0) ? @"\t" : @" "]; }
+			}
+		} else {
+			for (NSUInteger i = 0; i < ws.length; i++) {
+				if ([ws characterAtIndex:i] == '\t') [out appendString:[@"" stringByPaddingToLength:tabWidth withString:@" " startingAtIndex:0]];
+				else [out appendString:@" "];
+			}
+		}
+		if ([out isEqualToString:ws]) continue;
+		[e message:SCI_SETTARGETSTART wParam:ls lParam:0];
+		[e message:SCI_SETTARGETEND wParam:x lParam:0];
+		[e message:SCI_REPLACETARGET wParam:-1 lParam:(sptr_t)out.UTF8String];
+	}
+	[e message:SCI_ENDUNDOACTION wParam:0 lParam:0];
+}
+- (void)editTabify { [self convertLeadingWhitespaceToTabs:YES]; }
+- (void)editUntabify { [self convertLeadingWhitespaceToTabs:NO]; }
+- (void)insertFileName {
+	NSString *name = _document.fileURL.lastPathComponent ?: NPL(@"Untitled");
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)name.UTF8String];
+}
+- (void)insertUnixTimestamp {
+	NSString *ts = [NSString stringWithFormat:@"%lld", (long long)[NSDate date].timeIntervalSince1970];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)ts.UTF8String];
+}
+- (void)searchSaveFindText {
+	[[NSUserDefaults standardUserDefaults] setObject:([_findPanel currentFindText] ?: @"") forKey:@"NP4FindText"];
+}
+- (void)searchReplaceNext { [_findPanel replaceOne:_document]; [self refreshStatus]; }
+- (void)searchFindMatchingBrace {
+	ScintillaView *e = _document.editor;
+	const sptr_t pos = [e message:SCI_GETCURRENTPOS];
+	const sptr_t m = [e message:SCI_BRACEMATCH wParam:pos lParam:0];
+	if (m >= 0) [e message:SCI_SETSEL wParam:pos lParam:m + 1];
+}
+- (void)searchSelectWord {
+	ScintillaView *e = _document.editor;
+	const sptr_t pos = [e message:SCI_GETCURRENTPOS];
+	[e message:SCI_SETSEL wParam:[e message:SCI_WORDSTARTPOSITION wParam:pos lParam:1] lParam:[e message:SCI_WORDENDPOSITION wParam:pos lParam:1]];
+}
+- (void)viewLongLineMarker {
+	ScintillaView *e = _document.editor;
+	if ([e message:SCI_GETEDGEMODE] != EDGE_NONE) [e message:SCI_SETEDGEMODE wParam:EDGE_NONE lParam:0];
+	else { [e message:SCI_SETEDGECOLUMN wParam:80 lParam:0]; [e message:SCI_SETEDGEMODE wParam:EDGE_LINE lParam:0]; }
+}
+- (void)viewBraceMatch {
+	ScintillaView *e = _document.editor;
+	static BOOL on = YES; on = !on;
+	const sptr_t pos = [e message:SCI_GETCURRENTPOS];
+	if (on) [e message:SCI_BRACEHIGHLIGHT wParam:pos lParam:[e message:SCI_BRACEMATCH wParam:pos lParam:0]];
+	else [e message:SCI_BRACEHIGHLIGHT wParam:(sptr_t)-1 lParam:(sptr_t)-1];
+}
+- (void)viewBookmarkMargin {
+	ScintillaView *e = _document.editor;
+	const sptr_t w = [e message:SCI_GETMARGINWIDTHN wParam:1 lParam:0];
+	[e message:SCI_SETMARGINWIDTHN wParam:1 lParam:(w > 0 ? 0 : 16)];
+}
+- (void)settingsUseTabs {
+	ScintillaView *e = _document.editor;
+	[e message:SCI_SETUSETABS wParam:([e message:SCI_GETUSETABS] ? 0 : 1) lParam:0];
+}
+- (void)settingsTabSettings {
+	NSAlert *a = [[NSAlert alloc] init]; a.messageText = NPL(@"Tab Settings");
+	NSView *box = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 260, 84)];
+	NSTextField *tabLbl = [NSTextField labelWithString:NPL(@"Tab Width")]; tabLbl.frame = NSMakeRect(0, 56, 120, 20);
+	NSTextField *tabVal = [[NSTextField alloc] initWithFrame:NSMakeRect(130, 54, 60, 24)];
+	tabVal.integerValue = [_document.editor message:SCI_GETTABWIDTH];
+	NSTextField *indLbl = [NSTextField labelWithString:NPL(@"Indent Width")]; indLbl.frame = NSMakeRect(0, 28, 120, 20);
+	NSTextField *indVal = [[NSTextField alloc] initWithFrame:NSMakeRect(130, 26, 60, 24)];
+	indVal.integerValue = [_document.editor message:SCI_GETINDENT];
+	NSButton *useTabs = [NSButton checkboxWithTitle:NPL(@"Use Tabs") target:nil action:nil];
+	useTabs.frame = NSMakeRect(0, 0, 200, 20);
+	useTabs.state = ([_document.editor message:SCI_GETUSETABS] != 0) ? NSControlStateValueOn : NSControlStateValueOff;
+	[box addSubview:tabLbl]; [box addSubview:tabVal]; [box addSubview:indLbl]; [box addSubview:indVal]; [box addSubview:useTabs];
+	a.accessoryView = box; [a addButtonWithTitle:NPL(@"OK")]; [a addButtonWithTitle:NPL(@"Cancel")];
+	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSAlertFirstButtonReturn) return;
+		ScintillaView *e = _document.editor;
+		if (tabVal.integerValue > 0) [e message:SCI_SETTABWIDTH wParam:tabVal.integerValue lParam:0];
+		if (indVal.integerValue > 0) [e message:SCI_SETINDENT wParam:indVal.integerValue lParam:0];
+		[e message:SCI_SETUSETABS wParam:(useTabs.state == NSControlStateValueOn ? 1 : 0) lParam:0];
+	}];
+}
+- (void)settingsAutoCompletion {
+	NSAlert *a = [[NSAlert alloc] init]; a.messageText = NPL(@"Auto Completion Settings");
+	NSButton *onTyping = [NSButton checkboxWithTitle:NPL(@"Auto complete on typing") target:nil action:nil];
+	onTyping.frame = NSMakeRect(0, 0, 260, 20);
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	onTyping.state = ([d objectForKey:@"NP4AutoCompleteOnTyping"] == nil || [d boolForKey:@"NP4AutoCompleteOnTyping"]) ? NSControlStateValueOn : NSControlStateValueOff;
+	a.accessoryView = onTyping; [a addButtonWithTitle:NPL(@"OK")]; [a addButtonWithTitle:NPL(@"Cancel")];
+	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSAlertFirstButtonReturn) return;
+		[d setBool:(onTyping.state == NSControlStateValueOn) forKey:@"NP4AutoCompleteOnTyping"];
+	}];
+}
+- (void)settingsSaveOnExit {
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	const BOOL cur = ([d objectForKey:@"NP4SaveOnExit"] == nil) || [d boolForKey:@"NP4SaveOnExit"];
+	[d setBool:!cur forKey:@"NP4SaveOnExit"];
+}
+- (void)settingsSaveNow {
+	[[NSUserDefaults standardUserDefaults] synchronize];
+	NSAlert *a = [[NSAlert alloc] init]; a.messageText = NPL(@"Settings saved"); [a addButtonWithTitle:NPL(@"OK")];
+	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {}];
+}
+- (void)toggleMenuBar { _menuBar.hidden = !_menuBar.hidden; }
+- (void)toggleToolbar { _toolBar.hidden = !_toolBar.hidden; }
+- (void)toolsExecute {
+	NSURL *url = _document.fileURL;
+	if (!url) {
+		NSAlert *a = [[NSAlert alloc] init]; a.messageText = NPL(@"Save the file first");
+		[a addButtonWithTitle:NPL(@"Save")]; [a addButtonWithTitle:NPL(@"Cancel")];
+		[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+			if (r == NSAlertFirstButtonReturn && [self fileSave]) [[NSWorkspace sharedWorkspace] openURL:_document.fileURL];
+		}];
+		return;
+	}
+	[[NSWorkspace sharedWorkspace] openURL:url];
+}
+- (void)toolsOpenWith {
+	NSURL *url = _document.fileURL;
+	if (!url) { [self toolsExecute]; return; }
+	NSOpenPanel *op = [NSOpenPanel openPanel];
+	op.canChooseFiles = YES; op.canChooseDirectories = NO;
+	op.directoryURL = [NSURL fileURLWithPath:@"/Applications"]; op.allowedFileTypes = @[@"app"];
+	[op beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSModalResponseOK) return;
+		[[NSWorkspace sharedWorkspace] openURLs:@[url] withApplicationAtURL:op.URLs.firstObject
+			configuration:[NSWorkspaceOpenConfiguration configuration] completionHandler:nil];
+	}];
+}
+- (void)toolsRunCommand {
+	NSAlert *a = [[NSAlert alloc] init]; a.messageText = NPL(@"Run Command");
+	NSTextField *cmd = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 380, 24)];
+	cmd.stringValue = [[NSUserDefaults standardUserDefaults] stringForKey:@"NP4RunCommand"] ?: @"";
+	cmd.placeholderString = @"echo $(FullPath)"; a.accessoryView = cmd;
+	[a addButtonWithTitle:NPL(@"OK")]; [a addButtonWithTitle:NPL(@"Cancel")];
+	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSAlertFirstButtonReturn || !cmd.stringValue.length) return;
+		[[NSUserDefaults standardUserDefaults] setObject:cmd.stringValue forKey:@"NP4RunCommand"];
+		NSString *line = cmd.stringValue;
+		NSString *path = _document.fileURL.path ?: @"";
+		line = [line stringByReplacingOccurrencesOfString:@"$(FullPath)" withString:path];
+		line = [line stringByReplacingOccurrencesOfString:@"$(FileName)" withString:_document.fileURL.lastPathComponent ?: @""];
+		NSTask *task = [[NSTask alloc] init]; task.launchPath = @"/bin/sh"; task.arguments = @[@"-c", line];
+		NSPipe *pipe = [NSPipe pipe]; task.standardOutput = pipe; task.standardError = pipe;
+		@try { [task launch]; [task waitUntilExit]; } @catch (NSException *ex) { return; }
+		NSString *text = [[NSString alloc] initWithData:[pipe.fileHandleForReading readDataToEndOfFile] encoding:NSUTF8StringEncoding] ?: @"";
+		NSAlert *res = [[NSAlert alloc] init];
+		res.messageText = [NSString stringWithFormat:NPL(@"Command exited with status %d"), task.terminationStatus];
+		res.informativeText = text.length > 4000 ? [text substringToIndex:4000] : text;
+		[res addButtonWithTitle:NPL(@"OK")];
+		[res beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse rr) {}];
+	}];
+}
+- (void)actionOpenSelection {
+	NSString *sel = [[_document.editor selectedString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+	if (!sel.length) return;
+	NSURL *url = ([sel hasPrefix:@"http://"] || [sel hasPrefix:@"https://"] || [sel hasPrefix:@"file://"]) ? [NSURL URLWithString:sel] : [NSURL fileURLWithPath:[sel stringByExpandingTildeInPath]];
+	if (url) [[NSWorkspace sharedWorkspace] openURL:url];
+}
+- (void)actionSearchGoogle {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *q = [sel stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+	[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[@"https://www.google.com/search?q=" stringByAppendingString:q ?: @""]]];
+}
+- (void)base64URLSafeEncode {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *b64 = [[sel dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
+	b64 = [[[b64 stringByReplacingOccurrencesOfString:@"+" withString:@"-"] stringByReplacingOccurrencesOfString:@"/" withString:@"_"] stringByReplacingOccurrencesOfString:@"=" withString:@""];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)b64.UTF8String];
+}
+- (void)webEscapeHTML {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *x = [[[[[sel stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"] stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"] stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"] stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"] stringByReplacingOccurrencesOfString:@"'" withString:@"&#39;"];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)x.UTF8String];
+}
+- (void)webUnescapeHTML {
+	NSString *sel = [_document.editor selectedString];
+	if (!sel.length) return;
+	NSString *x = [[[[[sel stringByReplacingOccurrencesOfString:@"&lt;" withString:@"<"] stringByReplacingOccurrencesOfString:@"&gt;" withString:@">"] stringByReplacingOccurrencesOfString:@"&quot;" withString:@"\""] stringByReplacingOccurrencesOfString:@"&#39;" withString:@"'"] stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
+	[_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)x.UTF8String];
 }
 
 #pragma mark - Tools

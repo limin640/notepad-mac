@@ -2,13 +2,16 @@
 #import <Cocoa/Cocoa.h>
 #import "EditorDocument.h"
 
-@interface MainWindowController : NSWindowController <NSWindowDelegate>
+@interface MainWindowController : NSWindowController <NSWindowDelegate, NSMenuDelegate>
 
 @property (nonatomic, strong) EditorDocument *editorDocument;
 
 - (void)refreshStatus;
 - (void)updateWindowTitle;
 
+- (BOOL)handleKeyEquivalent:(NSEvent *)event;
 - (void)languageChinese;
 - (void)languageEnglish;
+- (NSArray<NSString *> *)inWindowMenuTitles;
+- (void)dumpInWindowMenus:(NSMutableString *)out;
 @end

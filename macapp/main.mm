@@ -151,6 +151,12 @@ int main(int argc, const char *argv[]) {
 						CGImageRelease(img);
 						NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
 						[png writeToFile:path atomically:YES];
+					} else {
+						NSView *v = [[controller window] contentView];
+						[v layoutSubtreeIfNeeded];
+						NSBitmapImageRep *rep = [v bitmapImageRepForCachingDisplayInRect:v.bounds];
+						[v cacheDisplayInRect:v.bounds toBitmapImageRep:rep];
+						[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
 					}
 				} else if ([path hasSuffix:@".pdf"]) {
 					NSView *v = [[controller window] contentView];
@@ -160,10 +166,109 @@ int main(int argc, const char *argv[]) {
 				[NSApp terminate:nil];
 			});
 		}
+		// --functest：逐项调用新实现的菜单动作，打印结果
+		if (ArgPresent(argc, argv, "--functest")) {
+			EditorDocument *d = controller.editorDocument;
+			[d applyLexerForExtension:@"cpp"];
+			[d.editor setString:@"hello WORLD\nint foo;\n(abc)\n"];
+			[d.editor message:SCI_SETSEL wParam:0 lParam:5];
+			[controller performSelector:@selector(editInvertCase)];
+			NSString *afterInv = [[d.editor string] substringToIndex:5];
+			[d.editor message:SCI_SETSEL wParam:0 lParam:5];
+			[controller performSelector:@selector(editTitleCase)];
+			NSString *afterTitle = [[d.editor string] substringToIndex:5];
+			[d.editor message:SCI_GOTOPOS wParam:17 lParam:0];
+			[controller performSelector:@selector(searchSelectWord)];
+			const sptr_t sw0 = [d.editor message:SCI_GETSELECTIONSTART];
+			const sptr_t sw1 = [d.editor message:SCI_GETSELECTIONEND];
+			[d.editor message:SCI_GOTOPOS wParam:20 lParam:0];
+			[controller performSelector:@selector(searchFindMatchingBrace)];
+			const sptr_t br0 = [d.editor message:SCI_GETSELECTIONSTART];
+			const sptr_t br1 = [d.editor message:SCI_GETSELECTIONEND];
+			[d.editor message:SCI_GOTOLINE wParam:1 lParam:0];
+			[controller performSelector:@selector(editLineComment)];
+			NSString *afterCmt = [d.editor string];
+			[d.editor setString:@"interesting\nint in"];
+			[d.editor message:SCI_GOTOPOS wParam:[d.editor message:SCI_GETLENGTH] lParam:0];
+			[controller performSelector:@selector(editCompleteWord)];
+			const sptr_t autoc = [d.editor message:SCI_AUTOCACTIVE];
+			[d.editor setString:@"backup-body"];
+			NSURL *src = [NSURL fileURLWithPath:@"/tmp/np4ft.txt"];
+			[d writeContentsToURL:src updateIdentity:YES error:nil];
+			[controller performSelector:@selector(fileSaveBackup)];
+			const BOOL bakOK = [[NSFileManager defaultManager] fileExistsAtPath:@"/tmp/np4ft.txt.bak"];
+			NSMutableString *mbTitles = [NSMutableString string];
+			for (NSView *v in controller.window.contentView.subviews) {
+				if (v.frame.size.height > 24) continue;
+				for (NSView *b in v.subviews) {
+					if ([b isKindOfClass:[NSButton class]]) {
+						if (mbTitles.length) [mbTitles appendString:@"/"];
+						[mbTitles appendString:[(NSButton *)b title]];
+					}
+				}
+			}
+			{
+				NSView *root = controller.window.contentView;
+				NSRect top = NSMakeRect(0, NSMaxY(root.bounds) - 52, root.bounds.size.width, 52);
+				NSBitmapImageRep *rep = [root bitmapImageRepForCachingDisplayInRect:top];
+				[root cacheDisplayInRect:top toBitmapImageRep:rep];
+				[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+					writeToFile:@"/tmp/np4_menubar.png" atomically:YES];
+			}
+			NSLog(@"[fn] inv=%@ title=%@ word=%ld-%ld brace=%ld-%ld cmtHas=%d autoc=%ld bak=%d menus=%@",
+				afterInv, afterTitle, (long)sw0, (long)sw1, (long)br0, (long)br1,
+				(int)([afterCmt containsString:@"//int"] || [afterCmt containsString:@"// int"]),
+				(long)autoc, (int)bakOK, mbTitles);
+			[NSApp terminate:nil];
+		}
+		// --selwatch：8 秒后报告选区长度（配合外部真实 ⌘A 验证窗口内菜单快捷键）
+		if (ArgPresent(argc, argv, "--selwatch")) {
+			EditorDocument *d = controller.editorDocument;
+			[d.editor setString:@"hello world select all test"];
+			[[controller window] makeFirstResponder:d.editor.content];
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				NSLog(@"[sel] key=%d main=%d fr=%@ len=%ld selStart=%ld selEnd=%ld",
+					(int)[controller window].isKeyWindow, (int)[controller window].isMainWindow,
+					NSStringFromClass([[controller window].firstResponder class]),
+					(long)[d.editor message:SCI_GETLENGTH],
+					(long)[d.editor message:SCI_GETSELECTIONSTART],
+					(long)[d.editor message:SCI_GETSELECTIONEND]);
+				[NSApp terminate:nil];
+			});
+		}
+		// --keytest：验证窗口内菜单的快捷键（Cmd+A 全选 / Cmd+Z 撤销）
+		if (ArgPresent(argc, argv, "--keytest")) {
+			EditorDocument *d = controller.editorDocument;
+			[[controller window] makeFirstResponder:d.editor.content];
+			NSLog(@"[key] fr=%@ key=%d", NSStringFromClass([[controller window].firstResponder class]),
+				(int)[controller window].isKeyWindow);
+			[d.editor message:SCI_CLEARALL wParam:0 lParam:0];
+			[d.editor message:SCI_ADDTEXT wParam:11 lParam:(sptr_t)"hello world"];
+			[d.editor message:SCI_SETSEL wParam:0 lParam:0];
+			NSEvent *(^mk)(NSString *, NSString *, NSEventModifierFlags) =
+				^NSEvent *(NSString *chars, NSString *ignoring, NSEventModifierFlags flags) {
+				return [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+					modifierFlags:flags timestamp:0 windowNumber:[controller window].windowNumber
+					context:nil characters:chars charactersIgnoringModifiers:ignoring
+					isARepeat:NO keyCode:0];
+			};
+			BOOL h1 = [controller handleKeyEquivalent:mk(@"a", @"a", NSEventModifierFlagCommand)];
+			const sptr_t selLen = [d.editor message:SCI_GETSELECTIONEND] - [d.editor message:SCI_GETSELECTIONSTART];
+			[d.editor message:SCI_SETSEL wParam:0 lParam:0];
+			BOOL h2 = [controller handleKeyEquivalent:mk(@"z", @"z", NSEventModifierFlagCommand)];
+			NSLog(@"[key] handledA=%d handledZ=%d", (int)h1, (int)h2);
+			NSLog(@"[key] selectAll len=%ld afterUndo len=%ld content=%@", (long)selLen,
+				(long)[d.editor message:SCI_GETLENGTH], [d.editor string]);
+			[NSApp terminate:nil];
+		}
 		// --dumpmenu：打印菜单树（校验界面语言）
 		if (ArgPresent(argc, argv, "--dumpmenu")) {
 			NSMutableString *out = [NSMutableString string];
+			[out appendString:@"== App ==\n"];
 			DumpMenuTree(NSApp.mainMenu, 0, out);
+			[out appendString:@"== Window ==\n"];
+			[controller dumpInWindowMenus:out];
 			printf("%s", out.UTF8String);
 			fflush(stdout);
 			[NSApp terminate:nil];
@@ -199,11 +304,11 @@ int main(int argc, const char *argv[]) {
 		if (ArgPresent(argc, argv, "--langswitchtest")) {
 			NSMutableString *out = [NSMutableString string];
 			[controller languageEnglish];
-			[out appendFormat:@"EN: %@ | %@ | %@\n", NSApp.mainMenu.itemArray[1].title,
-				NSApp.mainMenu.itemArray[2].title, [controller.editorDocument windowTitle]];
+			NSArray *en = [controller inWindowMenuTitles];
+			[out appendFormat:@"EN: %@ | %@ | %@\n", en.count?en[0]:@"?", en.count>1?en[1]:@"?", [controller.editorDocument windowTitle]];
 			[controller languageChinese];
-			[out appendFormat:@"ZH: %@ | %@ | %@\n", NSApp.mainMenu.itemArray[1].title,
-				NSApp.mainMenu.itemArray[2].title, [controller.editorDocument windowTitle]];
+			NSArray *zh = [controller inWindowMenuTitles];
+			[out appendFormat:@"ZH: %@ | %@ | %@\n", zh.count?zh[0]:@"?", zh.count>1?zh[1]:@"?", [controller.editorDocument windowTitle]];
 			printf("%s", out.UTF8String);
 			fflush(stdout);
 			[NSApp terminate:nil];
