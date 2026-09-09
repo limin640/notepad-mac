@@ -31,8 +31,9 @@ static NSString *WStr2(const wchar_t *ws) {
 @implementation StatusBarView
 
 - (void)drawRect:(NSRect)dirtyRect {
+	// 只填自身 bounds（dirtyRect 可能是整窗，会盖住其它视图）
 	[[NSColor windowBackgroundColor] setFill];
-	NSRectFill(dirtyRect);
+	NSRectFill(self.bounds);
 	// 顶部 1px 描边（Windows 状态栏上沿）
 	[[NSColor separatorColor] setFill];
 	NSRectFill(NSMakeRect(0, self.bounds.size.height - 1, self.bounds.size.width, 1));

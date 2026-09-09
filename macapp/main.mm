@@ -18,6 +18,13 @@ static void DumpViewTree(NSView *v, int depth, NSMutableString *tree) {
 	for (NSView *sub in v.subviews) DumpViewTree(sub, depth + 1, tree);
 }
 
+static bool ArgPresent(int argc, const char *argv[], const char *key) {
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], key) == 0) return true;
+	}
+	return false;
+}
+
 static const char *ArgValue(int argc, const char *argv[], const char *key) {
 	for (int i = 1; i < argc - 1; i++) {
 		if (strcmp(argv[i], key) == 0) return argv[i + 1];
@@ -71,19 +78,24 @@ int main(int argc, const char *argv[]) {
 		win.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace;
 		NSRect sf = [NSScreen mainScreen].visibleFrame;
 		[win setFrameTopLeftPoint:NSMakePoint(sf.origin.x + 80, sf.origin.y + sf.size.height - 40)];
-		[win makeKeyAndOrderFront:nil];
-		[win orderFrontRegardless];
-		[controller showWindow:nil];
-		[app activateIgnoringOtherApps:YES];
+		// --headless：测试模式不显示窗口（不干扰用户前台）
+		BOOL headless = ArgPresent(argc, argv, "--headless") || (getenv("NP4_HEADLESS") != nullptr);
+		BOOL quiet = ArgPresent(argc, argv, "--quiet");
+		if (!headless) {
+			[win makeKeyAndOrderFront:nil];
+			[win orderFrontRegardless];
+			[controller showWindow:nil];
+			if (!quiet) [app activateIgnoringOtherApps:YES];   // --quiet: 不抢焦点
+		}
 
 		InjectTestContent(argc, argv, controller);
 
-		if (argc >= 3 && strcmp(argv[1], "--shot") == 0) {
+		if (ArgValue(argc, argv, "--shot")) {
 			double delay = 3.0;
 			if (const char *d = ArgValue(argc, argv, "--delay")) delay = atof(d);
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
 				dispatch_get_main_queue(), ^{
-				NSString *path = [NSString stringWithUTF8String:argv[2]];
+				NSString *path = [NSString stringWithUTF8String:ArgValue(argc, argv, "--shot")];
 				if ([path.pathExtension isEqualToString:@"txt"]) {
 					NSMutableString *tree = [NSMutableString string];
 					DumpViewTree([[controller window] contentView], 0, tree);
@@ -109,14 +121,87 @@ int main(int argc, const char *argv[]) {
 				[NSApp terminate:nil];
 			});
 		}
-		if (argc >= 2 && strcmp(argv[1], "--printwid") == 0) {
+		if (ArgPresent(argc, argv, "--inputtest")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				NSWindow *w = [controller window];
+				EditorDocument *doc = controller.editorDocument;
+				NSView *content = [doc.editor content];
+				NSLog(@"[input] key=%d fr=%@ accepts=%d", (int)w.isKeyWindow,
+					NSStringFromClass([[w firstResponder] class]), (int)[content acceptsFirstResponder]);
+				// 模拟点击编辑区中央（真实用户操作路径）
+				NSPoint pt = NSMakePoint(400, 300);
+				NSEventType clickTypes[2] = {NSEventTypeLeftMouseDown, NSEventTypeLeftMouseUp};
+				for (int ci = 0; ci < 2; ci++) {
+					NSEventType t = clickTypes[ci];
+					NSEvent *me = [NSEvent mouseEventWithType:t location:pt modifierFlags:0
+						timestamp:0 windowNumber:w.windowNumber context:nil
+						eventNumber:1 clickCount:1 pressure:1.0];
+					[w sendEvent:me];
+				}
+				NSLog(@"[input] after click fr=%@ key=%d",
+					NSStringFromClass([[w firstResponder] class]), (int)w.isKeyWindow);
+				BOOL ok = [w makeFirstResponder:content];
+				NSLog(@"[input] makeFR=%d now=%@", (int)ok,
+					NSStringFromClass([[w firstResponder] class]));
+				for (const char *p = "abc"; *p; p++) {
+					NSString *ch = [NSString stringWithFormat:@"%c", *p];
+					NSEvent *ev = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+						modifierFlags:0 timestamp:0 windowNumber:w.windowNumber context:nil
+						characters:ch charactersIgnoringModifiers:ch isARepeat:NO keyCode:0];
+					[w sendEvent:ev];
+				}
+				NSLog(@"[input] len=%ld", (long)[doc.editor message:SCI_GETLENGTH]);
+				long nBtn = 0, nImg = 0;
+				for (NSView *v in [[w contentView] subviews]) {
+					for (NSView *sub in [v subviews]) {
+						if ([sub respondsToSelector:@selector(icon)]) {
+							nBtn++;
+							NSImage *im = [(id)sub icon];
+							if (im && im.size.width > 0) nImg++;
+						}
+					}
+				}
+				NSLog(@"[input] toolbar buttons=%ld withIcon=%ld", nBtn, nImg);
+				// 窗口截图对比（key vs 非 key）
+				typedef CGImageRef (*Fn)(CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption);
+				static Fn fn = (Fn)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
+				CGWindowID wid = (CGWindowID)w.windowNumber;
+				void (^SaveShot)(NSString *) = ^(NSString *p) {
+					CGImageRef img = fn ? fn(CGRectNull, kCGWindowListOptionIncludingWindow, wid,
+						kCGWindowImageBoundsIgnoreFraming) : NULL;
+					if (!img) return;
+					NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:img];
+					CGImageRelease(img);
+					NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+					[png writeToFile:p atomically:YES];
+				};
+				// cacheDisplay 渲染（走 drawRect，无需窗口在屏）
+				{
+					NSView *v = [[controller window] contentView];
+					NSBitmapImageRep *rep = [v bitmapImageRepForCachingDisplayInRect:v.bounds];
+					[v cacheDisplayInRect:v.bounds toBitmapImageRep:rep];
+					NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+					[png writeToFile:@"/tmp/shot_cache.png" atomically:YES];
+				}
+				[NSApp activateIgnoringOtherApps:YES];
+				[w makeKeyAndOrderFront:nil];
+				dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
+					dispatch_get_main_queue(), ^{
+					NSLog(@"[input] after activate key=%d", (int)w.isKeyWindow);
+					SaveShot(@"/tmp/shot_key.png");
+					[NSApp terminate:nil];
+				});
+			});
+		}
+		if (ArgPresent(argc, argv, "--printwid")) {
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
 				dispatch_get_main_queue(), ^{
 				printf("WID=%ld\n", (long)[[controller window] windowNumber]);
 				fflush(stdout);
 			});
 		}
-		if (argc >= 2 && strcmp(argv[1], "--closetest") == 0) {
+		if (ArgPresent(argc, argv, "--closetest")) {
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
 				dispatch_get_main_queue(), ^{
 				NSLog(@"[closetest] dirty=%d sciModify=%ld visible=%d", (int)controller.editorDocument.dirty, (long)[controller.editorDocument.editor message:SCI_GETMODIFY], (int)[controller window].isVisible);

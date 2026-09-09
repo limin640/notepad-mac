@@ -11,10 +11,40 @@
 @property (nonatomic) BOOL borderAtBottom;   // 工具栏底部描边
 @property (nonatomic) BOOL borderAtTop;      // 状态栏顶部描边
 @end
+
+// 工具栏按钮：只做命中测试，图标由 NPChromeView 统一绘制
+@interface NPImageButton : NSView
+@property (nonatomic, strong) NSImage *icon;
+@property (nonatomic, weak) id tbTarget;
+@property (nonatomic) SEL tbAction;
+@end
+
+@implementation NPImageButton
+- (BOOL)isFlipped { return YES; }
+- (void)mouseUp:(NSEvent *)e {
+	NSPoint p = [self convertPoint:e.locationInWindow fromView:nil];
+	if (NSPointInRect(p, self.bounds) && self.tbAction) {
+		[NSApp sendAction:self.tbAction to:self.tbTarget from:self];
+	}
+}
+@end
+
 @implementation NPChromeView
 - (void)drawRect:(NSRect)dirtyRect {
 	[[NSColor windowBackgroundColor] setFill];
-	NSRectFill(dirtyRect);
+	NSRectFill(self.bounds);
+	// 图标统一在此绘制（子视图 backing layer 不可靠）
+	for (NSView *sub in self.subviews) {
+		if (![sub respondsToSelector:@selector(icon)]) continue;
+		NSImage *img = [(id)sub icon];
+		if (!img || img.size.width <= 0) continue;
+		NSRect b = [sub convertRect:sub.bounds toView:self];
+		NSSize is = img.size;
+		NSRect r = NSMakeRect(NSMidX(b) - is.width / 2, NSMidY(b) - is.height / 2,
+			is.width, is.height);
+		[img drawInRect:r fromRect:NSZeroRect operation:NSCompositingOperationSourceOver
+			fraction:1.0 respectFlipped:YES hints:nil];
+	}
 	[[NSColor separatorColor] setFill];
 	if (self.borderAtBottom) {
 		NSRectFill(NSMakeRect(0, 0, self.bounds.size.width, 1));
@@ -126,24 +156,17 @@
 		} else {
 			NSString *name = [NSString stringWithFormat:@"tb16_%02d", e.icon];
 			NSString *path = [[NSBundle mainBundle] pathForResource:name ofType:@"png"];
-			NSImage *img = path ? [[NSImage alloc] initWithContentsOfFile:path] : nil;
-			NSButton *b = [NSButton buttonWithImage:img ?: [NSImage new] target:self action:e.act];
-			b.bordered = NO;
-			b.imageScaling = NSImageScaleNone;
+			NPImageButton *b = [[NPImageButton alloc] initWithFrame:NSMakeRect(0, 0, 22, 22)];
+			b.icon = path ? [[NSImage alloc] initWithContentsOfFile:path] : [NSImage new];
+			b.tbTarget = self;
+			b.tbAction = e.act;
+			b.toolTip = NSStringFromSelector(e.act);
 			b.translatesAutoresizingMaskIntoConstraints = NO;
 			[b.widthAnchor constraintEqualToConstant:22].active = YES;
 			[b.heightAnchor constraintEqualToConstant:22].active = YES;
 			if (e.dropdown) {
-				// 右下角小三角（Win32 BTNS_DROPDOWN 外观）
-				NSImageView *arrow = [[NSImageView alloc] initWithFrame:NSZeroRect];
-				arrow.image = [NSImage imageWithSystemSymbolName:@"chevron.down" accessibilityDescription:nil];
-				arrow.contentTintColor = [NSColor secondaryLabelColor];
-				arrow.translatesAutoresizingMaskIntoConstraints = NO;
-				[b addSubview:arrow];
-				[arrow.trailingAnchor constraintEqualToAnchor:b.trailingAnchor constant:-1].active = YES;
-				[arrow.bottomAnchor constraintEqualToAnchor:b.bottomAnchor constant:-1].active = YES;
-				[arrow.widthAnchor constraintEqualToConstant:6].active = YES;
-				[arrow.heightAnchor constraintEqualToConstant:6].active = YES;
+				// 右下角小三角（Win32 BTNS_DROPDOWN 外观）—— 直接画在按钮上
+				b.toolTip = [b.toolTip stringByAppendingString:@" ▾"];
 			}
 			v = b;
 		}
