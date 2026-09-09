@@ -1,6 +1,7 @@
 // 程序入口
 #import <Cocoa/Cocoa.h>
 #import <CoreGraphics/CoreGraphics.h>
+#include <dlfcn.h>
 #import "MainWindowController.h"
 #import "EditorDocument.h"
 #import "NPTheme.h"
@@ -74,8 +75,19 @@ int main(int argc, const char *argv[]) {
 					NSMutableString *tree = [NSMutableString string];
 					DumpViewTree([[controller window] contentView], 0, tree);
 					[tree writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-				} else if ([path hasSuffix:@".pdf"] || [path hasSuffix:@".png"]) {
-					// cacheDisplay 渲染（不走打印管线，避免 printJobTitle 异常）
+				} else if ([path hasSuffix:@".png"]) {
+					// 按窗口 ID 抓图（不受遮挡影响）；CGWindowListCreateImage 在 macOS 15 标记弃用，用 dlsym 取符号
+					typedef CGImageRef (*Fn)(CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption);
+					static Fn fn = (Fn)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
+					CGWindowID wid = (CGWindowID)[[controller window] windowNumber];
+					CGImageRef img = fn ? fn(CGRectNull, kCGWindowListOptionIncludingWindow, wid, kCGWindowImageDefault) : NULL;
+					if (img) {
+						NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:img];
+						CGImageRelease(img);
+						NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+						[png writeToFile:path atomically:YES];
+					}
+				} else if ([path hasSuffix:@".pdf"]) {
 					NSView *v = [[controller window] contentView];
 					NSBitmapImageRep *rep = [v bitmapImageRepForCachingDisplayInRect:v.bounds];
 					[v cacheDisplayInRect:v.bounds toBitmapImageRep:rep];
