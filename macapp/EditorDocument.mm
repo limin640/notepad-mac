@@ -4,6 +4,7 @@
 #import "LexerModule.h"
 #import "LexerPalettes.h"
 #import "LexerRegistry.h"
+#import "NPTheme.h"
 #import "EditLexer.h"
 #include <string>
 #include "Sci_Position.h"
@@ -57,6 +58,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	NSData *_rawBytes; // 打开时的原始字节（供重解码）
 	NSArray<NSString *> *_keywordsForAutoc; // 词表缓存（自动补全）
 	const EDITLEXER *_currentLexer;
+	NPThemeKind _theme;
 }
 
 - (instancetype)initWithNewUntitled:(NSInteger)sequence {
@@ -87,25 +89,64 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 - (void)setupEditor {
 	_editor = [[ScintillaView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)];
 	_editor.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-	// 基础编辑体验：行号边距 + 等宽字体 + Tab 宽 4
+
+	// ---- Notepad4 默认（对照 Styles.cpp / stlDefault.cpp）----
 	[_editor message:SCI_SETCODEPAGE wParam:SC_CP_UTF8 lParam:0];
-	// 全样式字符集设 UTF-8（fork 需要：StyleSetCharacterSet）
-	[_editor setGeneralProperty:SCI_STYLESETCHARACTERSET parameter:STYLE_DEFAULT value:SC_CHARSET_DEFAULT];
-	[_editor message:SCI_SETMARGINTYPEN wParam:0 lParam:SC_MARGIN_NUMBER];
-	[_editor message:SCI_SETMARGINWIDTHN wParam:0 lParam:48];
-	[_editor setGeneralProperty:SCI_SETUSETABS value:NO];
-	[_editor setGeneralProperty:SCI_SETTABWIDTH value:4];
-	[_editor setGeneralProperty:SCI_SETINDENTATIONGUIDES value:SC_IV_LOOKBOTH];
+
+	// 代码字体：Cascadia Mono -> Consolas，macOS 用 Menlo；默认 11pt（Style_DetectBaseFontSize）
 	[_editor setStringProperty:SCI_STYLESETFONT parameter:STYLE_DEFAULT value:@"Menlo"];
-	[_editor setGeneralProperty:SCI_STYLESETSIZE parameter:STYLE_DEFAULT value:13];
+	[_editor setGeneralProperty:SCI_STYLESETSIZE parameter:STYLE_DEFAULT value:12];
 	[_editor message:SCI_STYLECLEARALL wParam:0 lParam:0];
-	// 自动补全：单字符触发，忽略大小写，取消按键 Esc
+
+	// 边距：0=行号 1=书签(默认关) 2=折叠(默认开)
+	[_editor message:SCI_SETMARGINTYPEN wParam:0 lParam:SC_MARGIN_NUMBER];
+	[_editor message:SCI_SETMARGINWIDTHN wParam:1 lParam:0];
+	[_editor message:SCI_SETMARGINTYPEN wParam:2 lParam:SC_MARGIN_SYMBOL];
+	[_editor message:SCI_SETMARGINMASKN wParam:2 lParam:SC_MASK_FOLDERS];
+	[_editor message:SCI_SETMARGINWIDTHN wParam:2 lParam:14];
+	[_editor message:SCI_SETMARGINSENSITIVEN wParam:2 lParam:1];
+
+	// 制表符：TAB_WIDTH_4 / INDENT_WIDTH_4
+	[_editor setGeneralProperty:SCI_SETUSETABS value:0];
+	[_editor setGeneralProperty:SCI_SETTABWIDTH value:4];
+	[_editor setGeneralProperty:SCI_SETINDENT value:4];
+
+	// 光标：CARETSTYLE_LINE 宽 1（默认 iCaretStyle）
+	[_editor message:SCI_SETCARETSTYLE wParam:CARETSTYLE_LINE lParam:0];
+
+	// 折叠：自动折叠 + 省略号样式（Notepad4.cpp:1806-1807）
+	[_editor message:SCI_SETAUTOMATICFOLD
+		wParam:(SC_AUTOMATICFOLD_SHOW | SC_AUTOMATICFOLD_CLICK | SC_AUTOMATICFOLD_CHANGE) lParam:0];
+	[_editor message:SCI_FOLDDISPLAYTEXTSETSTYLE wParam:SC_FOLDDISPLAYTEXT_BOXED lParam:0];
+
+	// 自动补全
 	[_editor message:SCI_AUTOCSETIGNORECASE wParam:1 lParam:0];
 	[_editor message:SCI_AUTOCSETCANCELATSTART wParam:1 lParam:0];
 	[_editor message:SCI_AUTOCSETDROPRESTOFWORD wParam:1 lParam:0];
-	// 修改标记：SCN_SAVEPOINTLEFT -> dirty
+
+	// 主题：默认暗色（对齐 Notepad4 README 首页截图；Scheme 菜单可切换）
+	_theme = NPThemeDark;
+	NPApplyTheme(_editor, _theme, nullptr);
+	[self updateLineNumberWidth];
+
 	_editor.delegate = self;
 }
+
+// 行号宽度 = 文本宽度("__" + 最大行号)（UpdateLineNumberWidth）
+- (void)updateLineNumberWidth {
+	const sptr_t lines = [_editor message:SCI_GETLINECOUNT];
+	NSString *sample = [NSString stringWithFormat:@"__%ld", (long)lines];
+	const sptr_t w = [_editor message:SCI_TEXTWIDTH wParam:STYLE_LINENUMBER lParam:(sptr_t)sample.UTF8String];
+	[_editor message:SCI_SETMARGINWIDTHN wParam:0 lParam:w];
+}
+
+- (void)setTheme:(NPThemeKind)theme {
+	_theme = theme;
+	NPApplyTheme(_editor, theme, _currentLexer);
+	[self updateLineNumberWidth];
+}
+
+- (NPThemeKind)theme { return _theme; }
 
 // Scintilla 通知回调（ScintillaView 的 informal delegate）
 - (void)notification:(SCNotification *)scn {
@@ -241,7 +282,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 - (void)applyLexerForExtension:(NSString *)ext {
 	const EDITLEXER *lex = [LexerRegistry lexerForExtension:ext];
 	if (lex) {
-		[LexerRegistry applyLexer:lex toEditor:_editor];
+		[LexerRegistry applyLexer:lex toEditor:_editor darkMode:(_theme == NPThemeDark)];
 		// 缓存词表给自动补全（词集0 = 关键字）
 		NSMutableArray *kws = [NSMutableArray array];
 		for (unsigned i = 0; i < lex->keywordCount && i < 9; i++) {

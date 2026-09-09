@@ -73,10 +73,12 @@ add_executable(Notepad4 MACOSX_BUNDLE
     macapp/LexerRegistry.mm
     macapp/FindReplacePanel.mm
     macapp/StatusBarView.mm
+    macapp/NPTheme.mm
 )
 set_source_files_properties(
     macapp/main.mm macapp/MainWindowController.mm macapp/EditorDocument.mm
     macapp/LexerRegistry.mm macapp/FindReplacePanel.mm macapp/StatusBarView.mm
+    macapp/NPTheme.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc"
 )
 target_include_directories(Notepad4 PRIVATE
@@ -102,5 +104,10 @@ add_custom_command(TARGET Notepad4 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/macapp/Resources/Notepad4.icns"
         "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/Notepad4.icns"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/macapp/Resources/Notepad4 DarkTheme.ini"
+        "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/Notepad4 DarkTheme.ini"
+    COMMAND /usr/bin/rsync -a "${CMAKE_SOURCE_DIR}/macapp/ToolbarIcons/"
+        "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/"
     COMMAND touch "$<TARGET_BUNDLE_DIR:Notepad4>"
-    COMMENT "Copying app icon")
+    COMMENT "Copying app icon, toolbar icons, dark theme")

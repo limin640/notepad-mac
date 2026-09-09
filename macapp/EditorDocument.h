@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import "ScintillaView.h"
+#import "NPTheme.h"
 
 struct EDITLEXER;
 
@@ -23,6 +24,8 @@ struct EDITLEXER;
 - (void)reloadWithEncoding:(NSString *)encodingName;
 - (void)setSaveEncoding:(NSString *)encodingName;
 - (NSString *)currentEncoding;
+- (void)setTheme:(NPThemeKind)theme;
+- (NPThemeKind)theme;
 @property (nonatomic, readonly, nullable) const EDITLEXER *currentLexer;
 - (NSString *)windowTitle;
 

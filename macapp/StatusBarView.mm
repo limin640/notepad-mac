@@ -1,3 +1,6 @@
+// 状态栏：复刻 Notepad4 的 IDS_STATUSITEM_FORMAT
+// "Ln %s / %s \nCol %s / %s \nCh %s / %s \nSel %s / %s \nSelLn %s \nFnd %s "
+// 后续格：词法器 | 编码 | EOL | INS/OVR | 缩放 | 文档大小
 #import "StatusBarView.h"
 #import "EditorDocument.h"
 #import "ScintillaView.h"
@@ -5,7 +8,7 @@
 #import "EditLexer.h"
 #include <cwchar>
 
-static NSString *FormatCount(long n) {
+static NSString *Num(long n) {
 	static NSNumberFormatter *fmt;
 	static dispatch_once_t once;
 	dispatch_once(&once, ^{
@@ -15,13 +18,14 @@ static NSString *FormatCount(long n) {
 	return [fmt stringFromNumber:@(n)];
 }
 
+static NSString *WStr2(const wchar_t *ws) {
+	if (!ws) return @"";
+	return [[NSString alloc] initWithBytes:ws length:wcslen(ws)*sizeof(wchar_t)
+		encoding:NSUTF32LittleEndianStringEncoding];
+}
+
 @interface StatusBarView ()
-@property (nonatomic, strong) NSTextField *posField;
-@property (nonatomic, strong) NSTextField *lexerField;
-@property (nonatomic, strong) NSTextField *zoomField;
-@property (nonatomic, strong) NSTextField *sizeField;
-@property (nonatomic, strong) NSTextField *encField;
-@property (nonatomic, strong) NSTextField *eolField;
+@property (nonatomic, strong) NSMutableArray<NSTextField *> *cells;
 @end
 
 @implementation StatusBarView
@@ -30,111 +34,114 @@ static NSString *FormatCount(long n) {
 	self = [super initWithFrame:frame];
 	if (self) {
 		self.wantsLayer = YES;
-		self.layer.backgroundColor = [NSColor controlBackgroundColor].CGColor;
+		self.layer.backgroundColor = [NSColor colorWithSRGBRed:0xF0/255.0 green:0xF0/255.0 blue:0xF0/255.0 alpha:1].CGColor;
+		_cells = [NSMutableArray array];
 
-		NSTextField * (^MakeField)(void) = ^NSTextField *(void) {
+		// 12 格：6 位置 + 词法器 + 编码 + EOL + INS + 缩放 + 大小
+		NSArray<NSNumber *> *widths = @[@0, @64, @64, @64, @52, @44, @0, @110, @56, @44, @34, @40, @56];
+		NSView *prev = nil;
+		for (NSUInteger i = 0; i < widths.count; i++) {
 			NSTextField *f = [NSTextField labelWithString:@""];
 			f.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
-			f.textColor = [NSColor secondaryLabelColor];
-			f.alignment = NSTextAlignmentCenter;
+			f.textColor = [NSColor labelColor];
+			f.alignment = (i == 6 || i == 7) ? NSTextAlignmentCenter : NSTextAlignmentCenter;
 			f.lineBreakMode = NSLineBreakByClipping;
 			f.translatesAutoresizingMaskIntoConstraints = NO;
-			f.cell.truncatesLastVisibleLine = YES;
-			return f;
-		};
-		_posField = MakeField();
-		_lexerField = MakeField();
-		_zoomField = MakeField();
-		_sizeField = MakeField();
-		_encField = MakeField();
-		_eolField = MakeField();
-
-		NSDictionary *views = @{@"pos": _posField, @"lex": _lexerField, @"zoom": _zoomField,
-			@"size": _sizeField, @"enc": _encField, @"eol": _eolField};
-		for (NSString *key in views.allKeys) {
-			[self addSubview:views[key]];
-		}
-		// 锚点布局：右起 eol/enc/size/zoom/lex 固定宽，pos 占剩余
-		NSView *prev = self;
-		NSString *prevAnchor = @"trailingAnchor";
-		NSArray *rightItems = @[@{@"v": _eolField, @"w": @46}, @{@"v": _encField, @"w": @64},
-			@{@"v": _sizeField, @"w": @64}, @{@"v": _zoomField, @"w": @48}, @{@"v": _lexerField, @"w": @120}];
-		[self.leadingAnchor constraintEqualToAnchor:_posField.leadingAnchor constant:-4].active = YES;
-		[self.trailingAnchor constraintEqualToAnchor:_lexerField.trailingAnchor constant:4].active = YES;
-		NSView *left = _posField;
-		for (NSDictionary *it in rightItems) {
-			NSView *v = it[@"v"];
-			[left.trailingAnchor constraintEqualToAnchor:v.leadingAnchor constant:-2].active = YES;
-			[v.widthAnchor constraintEqualToConstant:[it[@"w"] doubleValue]].active = YES;
-			[v.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
-			[v.heightAnchor constraintEqualToConstant:18].active = YES;
-			left = v;
-		}
-		[_posField.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
-		[_posField.heightAnchor constraintEqualToConstant:18].active = YES;
-		for (NSTextField *f in @[_lexerField, _zoomField, _sizeField, _encField, _eolField]) {
+			[self addSubview:f];
 			[f.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
+			[f.heightAnchor constraintEqualToConstant:16].active = YES;
+			if (widths[i].doubleValue > 0) {
+				[f.widthAnchor constraintEqualToConstant:widths[i].doubleValue].active = YES;
+			}
+			// 分隔线（Windows 状态栏格线）
+			if (i > 0) {
+				NSView *sep = [[NSView alloc] initWithFrame:NSZeroRect];
+				sep.wantsLayer = YES;
+				sep.layer.backgroundColor = [NSColor separatorColor].CGColor;
+				sep.translatesAutoresizingMaskIntoConstraints = NO;
+				[self addSubview:sep];
+				[sep.widthAnchor constraintEqualToConstant:1].active = YES;
+				[sep.heightAnchor constraintEqualToConstant:14].active = YES;
+				[sep.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
+				[prev.trailingAnchor constraintEqualToAnchor:sep.leadingAnchor constant:-2].active = YES;
+				[f.leadingAnchor constraintEqualToAnchor:sep.trailingAnchor constant:2].active = YES;
+			}
+			if (!prev) {
+				[self.leadingAnchor constraintEqualToAnchor:f.leadingAnchor constant:-6].active = YES;
+			}
+			[_cells addObject:f];
+			prev = f;
 		}
+		[self.trailingAnchor constraintGreaterThanOrEqualToAnchor:prev.trailingAnchor constant:6].active = YES;
 	}
 	return self;
 }
 
+- (NSTextField *)cellAt:(NSUInteger)i {
+	return (i < _cells.count) ? _cells[i] : nil;
+}
+
 - (void)updateForDocument:(EditorDocument *)doc {
-	if (!doc) {
-		self.posField.stringValue = @"";
-		self.lexerField.stringValue = @"";
-		self.encField.stringValue = @"";
-		return;
-	}
+	if (!doc) return;
 	ScintillaView *e = doc.editor;
+
 	const sptr_t pos = [e message:SCI_GETCURRENTPOS];
 	const sptr_t line = [e message:SCI_LINEFROMPOSITION wParam:pos];
 	const sptr_t lines = [e message:SCI_GETLINECOUNT];
 	const sptr_t lineStart = [e message:SCI_POSITIONFROMLINE wParam:line];
-	const sptr_t colBytes = pos - lineStart;
+	const sptr_t lineEnd = [e message:SCI_GETLINEENDPOSITION wParam:line];
+	const sptr_t col = pos - lineStart;
+	const sptr_t lineLen = lineEnd - lineStart;
 
-	// 选择统计
 	const sptr_t selStart = [e message:SCI_GETSELECTIONSTART];
 	const sptr_t selEnd = [e message:SCI_GETSELECTIONEND];
-	NSString *selBytesStr = @"0";
+	const sptr_t selBytes = (selEnd > selStart) ? (selEnd - selStart) : 0;
+	const sptr_t selChars = (selEnd > selStart) ? [e message:SCI_COUNTCHARACTERS wParam:selStart lParam:selEnd] : 0;
+	sptr_t selLines = 0;
 	if (selEnd > selStart) {
-		const sptr_t selBytes = [e message:SCI_GETSELTEXT] - 1;
-		selBytesStr = FormatCount(selBytes);
+		selLines = [e message:SCI_LINEFROMPOSITION wParam:selEnd]
+			- [e message:SCI_LINEFROMPOSITION wParam:selStart] + 1;
 	}
 
-	self.posField.stringValue = [NSString stringWithFormat:@"Ln %@ / %@   Col %@   Ch %@   Sel %@",
-		FormatCount(line + 1), FormatCount(lines), FormatCount(colBytes + 1),
-		FormatCount(pos + 1), selBytesStr];
+	// Ln / Col / Ch / Sel / SelLn / Fnd
+	[self cellAt:0].stringValue = [NSString stringWithFormat:@"Ln %@ / %@",
+		Num(line + 1), Num(lines)];
+	[self cellAt:1].stringValue = [NSString stringWithFormat:@"Col %@ / %@",
+		Num(col + 1), Num(lineLen + 1)];
+	[self cellAt:2].stringValue = [NSString stringWithFormat:@"Ch %@ / %@",
+		Num(pos + 1), Num([e message:SCI_GETLENGTH] + 1)];
+	[self cellAt:3].stringValue = [NSString stringWithFormat:@"Sel %@ / %@",
+		Num(selBytes), Num(selChars)];
+	[self cellAt:4].stringValue = [NSString stringWithFormat:@"SelLn %@", Num(selLines)];
+	[self cellAt:5].stringValue = @"Fnd 0";
 
 	// 词法器名
-	NSString *lexName = NSLocalizedString(@"普通文本", nil);
 	const EDITLEXER *lex = doc.currentLexer;
-	if (lex && lex->pszName) {
-		NSString *n = [[NSString alloc] initWithBytes:lex->pszName
-			length:wcslen(lex->pszName)*sizeof(wchar_t)
-			encoding:NSUTF32LittleEndianStringEncoding];
-		lexName = n;
-	}
-	self.lexerField.stringValue = lexName;
-
-	// 缩放
-	self.zoomField.stringValue = [NSString stringWithFormat:@"%ld%%",
-		(long)(([e message:SCI_GETZOOM]) * 100 / 100)];
-
-	// 大小
-	const sptr_t len = [e message:SCI_GETLENGTH];
-	NSString *sizeStr = nil;
-	if (len < 1024) sizeStr = [NSString stringWithFormat:@"%ld B", (long)len];
-	else if (len < 1024*1024) sizeStr = [NSString stringWithFormat:@"%.1f KB", len/1024.0];
-	else sizeStr = [NSString stringWithFormat:@"%.1f MB", len/1048576.0];
-	self.sizeField.stringValue = sizeStr;
+	[self cellAt:6].stringValue = lex ? WStr2(lex->pszName) : @"Text File";
 
 	// 编码
-	self.encField.stringValue = doc.currentEncoding ?: @"UTF-8";
+	[self cellAt:7].stringValue = doc.currentEncoding ?: @"UTF-8";
 
 	// EOL
 	const sptr_t eol = [e message:SCI_GETEOLMODE];
-	self.eolField.stringValue = (eol == SC_EOL_CRLF) ? @"CRLF" : @"LF";
+	[self cellAt:8].stringValue = (eol == SC_EOL_CRLF) ? @"CR+LF"
+		: (eol == SC_EOL_CR) ? @"CR" : @"LF";
+
+	// INS/OVR
+	const BOOL ovr = [e message:SCI_GETOVERTYPE];
+	[self cellAt:9].stringValue = ovr ? @"OVR" : @"INS";
+
+	// 缩放
+	const long zoom = [e message:SCI_GETZOOM];   // fork: 百分比（100 = 默认）
+	[self cellAt:10].stringValue = [NSString stringWithFormat:@"%ld%%", zoom > 0 ? zoom : 100];
+
+	// 大小
+	const sptr_t len = [e message:SCI_GETLENGTH];
+	NSString *sizeStr;
+	if (len < 1024) sizeStr = [NSString stringWithFormat:@"%ld B", (long)len];
+	else if (len < 1024*1024) sizeStr = [NSString stringWithFormat:@"%.1f KB", len/1024.0];
+	else sizeStr = [NSString stringWithFormat:@"%.1f MB", len/1048576.0];
+	[self cellAt:11].stringValue = sizeStr;
 }
 
 @end

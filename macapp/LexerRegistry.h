@@ -14,6 +14,7 @@ struct EDITLEXER;
 
 // 对 editor 应用 EDITLEXER：设词法器、注词表、应用默认样式
 + (void)applyLexer:(const EDITLEXER *)lex toEditor:(ScintillaView *)editor;
++ (void)applyLexer:(const EDITLEXER *)lex toEditor:(ScintillaView *)editor darkMode:(BOOL)dark;
 
 // 生成扩展名 -> 词法器 调试清单
 + (NSArray<NSDictionary *> *)allLexersInfo;

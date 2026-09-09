@@ -3,11 +3,9 @@
 #import "Scintilla.h"
 #import "SciLexer.h"
 #include <cwchar>
-#import "Scintilla.h"
-
 #include <vector>
 #include <string>
-#include <vector>
+#include <unordered_map>
 
 static NSString *WStr(const wchar_t *ws) {
 	if (!ws) return @"";
@@ -109,9 +107,48 @@ extern EDITLEXER lexYAML;
 extern EDITLEXER lexZig;
 
 // 扩展名匹配顺序：常用优先
+
 static EDITLEXER * const kLexers[] = {
 	&lexABAQUS, &lexAPDL, &lexActionScript, &lexASM, &lexAsymptote, &lexAutoHotkey, &lexAutoIt3, &lexAviSynth, &lexAwk, &lexBash, &lexBatch, &lexBlockdiag, &lexCIL, &lexCMake, &lexCPP, &lexCSS, &lexCSharp, &lexCangjie, &lexCoffeeScript, &lexDLang, &lexDart, &lexGlobal, &lexTextFile, &lex2ndTextFile, &lexANSI, &lexConfig, &lexCSV, &lexDiff, &lexINI, &lexElixir, &lexErlang, &lexFSharp, &lexFortran, &lexGN, &lexGo, &lexGradle, &lexGraphViz, &lexGroovy, &lexHTML, &lexHaskell, &lexHaxe, &lexInnoSetup, &lexJSON, &lexJamfile, &lexJava, &lexJavaScript, &lexJulia, &lexKotlin, &lexLLVM, &lexLaTeX, &lexLisp, &lexLua, &lexMakefile, &lexMarkdown, &lexMathematica, &lexMatlab, &lexNim, &lexNsis, &lexOCaml, &lexPHP, &lexPascal, &lexPerl, &lexPowerBuilder, &lexPowerShell, &lexPython, &lexRLang, &lexRebol, &lexResourceScript, &lexRuby, &lexRust, &lexSAS, &lexSQL, &lexScala, &lexSmali, &lexSwift, &lexTOML, &lexTcl, &lexTexinfo, &lexTypeScript, &lexTypst, &lexVisualBasic, &lexVBScript, &lexVHDL, &lexVerilog, &lexVim, &lexWASM, &lexWinHex, &lexXML, &lexYAML, &lexZig,
 };
+
+// ---- 暗色主题覆盖表（Notepad4 DarkTheme.ini）----
+// 结构: @{ 词法器名: @{ 样式名: "fore:#xxx; back:#yyy; ..." } }
+static NSDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *gThemeOverrides;
+
+static void LoadDarkThemeOverrides(void) {
+	if (gThemeOverrides) return;
+	NSMutableDictionary *all = [NSMutableDictionary dictionary];
+	NSString *path = [[NSBundle mainBundle] pathForResource:@"Notepad4 DarkTheme" ofType:@"ini"];
+	if (!path) { gThemeOverrides = all; return; }
+	NSData *data = [NSData dataWithContentsOfFile:path];
+	NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF16StringEncoding];
+	if (!text) text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+	if (!text) { gThemeOverrides = all; return; }
+
+	NSMutableDictionary *cur = nil;
+	for (NSString *rawLine in [text componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+		NSString *line = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+		if (line.length == 0 || [line hasPrefix:@";"]) continue;
+		if ([line hasPrefix:@"["] && [line hasSuffix:@"]"]) {
+			NSString *sec = [line substringWithRange:NSMakeRange(1, line.length - 2)];
+			if ([sec isEqualToString:@"Global Styles"] || [sec isEqualToString:@"Custom Colors"]) {
+				cur = nil;
+			} else {
+				cur = [NSMutableDictionary dictionary];
+				all[sec] = cur;
+			}
+			continue;
+		}
+		if (!cur) continue;
+		NSRange eq = [line rangeOfString:@"="];
+		if (eq.location == NSNotFound) continue;
+		NSString *key = [[line substringToIndex:eq.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+		NSString *val = [[line substringFromIndex:eq.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+		if (key.length) cur[key] = val;
+	}
+	gThemeOverrides = all;
+}
 
 @implementation LexerRegistry
 
@@ -120,10 +157,7 @@ static EDITLEXER * const kLexers[] = {
 	static dispatch_once_t once;
 	dispatch_once(&once, ^{
 		NSMutableArray *arr = [NSMutableArray array];
-		for (EDITLEXER *lex : kLexers) {
-			[arr addObject:[NSValue valueWithPointer:lex]];
-		}
-		// 全量：LinkTime 扫描不可行，这里只列显式集；扩展匹配走每 lex 的 szExtensions
+		for (EDITLEXER *lex : kLexers) [arr addObject:[NSValue valueWithPointer:lex]];
 		all = arr;
 	});
 	return all;
@@ -133,27 +167,29 @@ static EDITLEXER * const kLexers[] = {
 	if (ext.length == 0) return nullptr;
 	NSString *want = ext.lowercaseString;
 	for (EDITLEXER *lex : kLexers) {
-		if (!lex->pszDefExt) continue;
 		NSString *exts = WStr(lex->pszDefExt);
-		// szExtensions 形如 "cpp;cxx;cc;c;h;hpp"（空格分隔也兼容）
 		NSArray *parts = [exts componentsSeparatedByCharactersInSet:
 			[NSCharacterSet characterSetWithCharactersInString:@"; "]];
 		for (__strong NSString *e in parts) {
-			if (e.length && [e.lowercaseString isEqualToString:want]) {
-				return lex;
-			}
+			if (e.length && [e.lowercaseString isEqualToString:want]) return lex;
 		}
 	}
 	return nullptr;
 }
 
 + (void)applyLexer:(const EDITLEXER *)lex toEditor:(ScintillaView *)editor {
+	[self applyLexer:lex toEditor:editor darkMode:NO];
+}
+
++ (void)applyLexer:(const EDITLEXER *)lex toEditor:(ScintillaView *)editor darkMode:(BOOL)dark {
 	if (!lex) return;
 
 	// 1. 词法器
 	[editor setGeneralProperty:SCI_SETLEXER value:lex->iLexer];
+	// 2. 代码折叠（对照 Styles.cpp: SetProperty("fold","1")）
+	[editor setLexerProperty:@"fold" value:@"1"];
 
-	// 2. 词表（keywordCount 个集合）
+	// 2. 词表
 	for (unsigned i = 0; i < lex->keywordCount && i < 9; i++) {
 		const char *kw = lex->pszKeyWords[i];
 		if (kw && *kw) {
@@ -162,23 +198,34 @@ static EDITLEXER * const kLexers[] = {
 		}
 	}
 
-	// 3. 样式：EDITSTYLE 的 szValue 形如 "bold; fore:#FF8000"
-	//    词法器默认样式表在 EditLexer.h 的 Styles 数组
-	for (unsigned i = 0; i < lex->iStyleCount; i++) {
-		const EDITSTYLE &es = lex->Styles[i];
-		[self applyEditStyle:es toEditor:editor];
+	// 3. 暗色覆盖（按词法器名+样式名匹配）
+	NSDictionary *overrides = nil;
+	if (dark) {
+		LoadDarkThemeOverrides();
+		overrides = gThemeOverrides[WStr(lex->pszName)];
 	}
 
-	// 4. 强制重着色
+	// 4. 样式：先用 stl 默认值，再用主题覆盖
+	for (unsigned i = 0; i < lex->iStyleCount; i++) {
+		const EDITSTYLE &es = lex->Styles[i];
+		NSString *override = overrides ? overrides[WStr(es.pszName)] : nil;
+		NSString *val = override.length ? override : WStr(es.pszDefault);
+		[self applyStyleValue:val toStyle:es.iStyle editor:editor];
+	}
+
+	// 5. 强制重着色
 	[editor message:SCI_COLOURISE wParam:0 lParam:-1];
 }
 
 + (void)applyEditStyle:(const EDITSTYLE &)es toEditor:(ScintillaView *)editor {
-	NSString *val = WStr(es.pszDefault);
+	[self applyStyleValue:WStr(es.pszDefault) toStyle:es.iStyle editor:editor];
+}
+
++ (void)applyStyleValue:(NSString *)val toStyle:(unsigned long)styleId editor:(ScintillaView *)editor {
 	if (val.length == 0) return;
-	// MULTI_STYLE 打包的样式号（>255 或含高位）逐字节解包；非法则跳过
+	// MULTI_STYLE 打包样式号逐字节解包
 	std::vector<unsigned> styles;
-	unsigned long sid = es.iStyle;
+	unsigned long sid = styleId;
 	if (sid <= STYLE_MAX) {
 		styles.push_back(static_cast<unsigned>(sid));
 	} else {
@@ -189,16 +236,17 @@ static EDITLEXER * const kLexers[] = {
 		}
 	}
 	if (styles.empty()) return;
+
 	for (NSString *rawTok in [val componentsSeparatedByString:@";"]) {
 		NSString *tok = [rawTok stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
 		if (tok.length == 0) continue;
 		for (unsigned st : styles) {
 			if ([tok hasPrefix:@"fore:"]) {
-				NSString *c = [tok substringFromIndex:5];
-				[editor setColorProperty:SCI_STYLESETFORE parameter:st fromHTML:c];
+				[editor setColorProperty:SCI_STYLESETFORE parameter:st
+					fromHTML:[tok substringFromIndex:5]];
 			} else if ([tok hasPrefix:@"back:"]) {
-				NSString *c = [tok substringFromIndex:5];
-				[editor setColorProperty:SCI_STYLESETBACK parameter:st fromHTML:c];
+				[editor setColorProperty:SCI_STYLESETBACK parameter:st
+					fromHTML:[tok substringFromIndex:5]];
 			} else if ([tok isEqualToString:@"bold"]) {
 				[editor setGeneralProperty:SCI_STYLESETBOLD parameter:st value:1];
 			} else if ([tok isEqualToString:@"italic"]) {
@@ -210,7 +258,9 @@ static EDITLEXER * const kLexers[] = {
 				if (sz > 0) [editor setGeneralProperty:SCI_STYLESETSIZE parameter:st value:sz];
 			} else if ([tok hasPrefix:@"font:"]) {
 				NSString *fname = [tok substringFromIndex:5];
-				[editor setStringProperty:SCI_STYLESETFONT parameter:st value:fname];
+				if (![fname hasPrefix:@"$("]) {
+					[editor setStringProperty:SCI_STYLESETFONT parameter:st value:fname];
+				}
 			}
 		}
 	}
@@ -219,9 +269,9 @@ static EDITLEXER * const kLexers[] = {
 + (NSArray<NSDictionary *> *)allLexersInfo {
 	NSMutableArray *out = [NSMutableArray array];
 	for (EDITLEXER *lex : kLexers) {
-		NSString *name = WStr(lex->pszName);
-		NSString *exts = WStr(lex->pszDefExt);
-		[out addObject:@{@"name": name, @"extensions": exts, @"sclex": @(lex->iLexer)}];
+		[out addObject:@{@"name": WStr(lex->pszName),
+			@"extensions": WStr(lex->pszDefExt),
+			@"sclex": @(lex->iLexer)}];
 	}
 	return out;
 }

@@ -14,6 +14,8 @@
 	NSMenuItem *_lineNumbersItem;
 	StatusBarView *_statusBar;
 	EditorDocument *_document;
+	NSMenuItem *_themeDefaultItem;
+	NSMenuItem *_themeDarkItem;
 }
 @dynamic document;
 
@@ -25,6 +27,9 @@
 		backing:NSBackingStoreBuffered defer:NO];
 	win.title = @"Untitled - Notepad4";
 	win.minSize = NSMakeSize(400, 280);
+	// Windows 版 Notepad4：chrome（标题栏/工具栏/菜单/状态栏）恒为浅色，
+	// 只有编辑区随 Style Theme 变暗（对照 v24.07HD 截图）
+	win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
 	self = [super initWithWindow:win];
 	if (self) {
 		win.delegate = self;
@@ -45,86 +50,99 @@
 	root.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	win.contentView = root;
 
-	// ---- 工具栏：一排 16px 小图标 + 竖分隔线（对照 v24.07HD 截图）----
+	// ---- 工具栏：原版位图图标 + DefaultToolbarButtons 顺序 ----
 	NSView *bar = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 900, 30)];
 	bar.wantsLayer = YES;
-	bar.layer.backgroundColor = [NSColor controlBackgroundColor].CGColor;
+	bar.layer.backgroundColor = [NSColor colorWithSRGBRed:0xF0/255.0 green:0xF0/255.0 blue:0xF0/255.0 alpha:1].CGColor;
 	bar.translatesAutoresizingMaskIntoConstraints = NO;
 	[root addSubview:bar];
 
-	NSButton * (^TB)(NSString *sym, SEL act, NSString *tip) = ^NSButton *(NSString *sym, SEL act, NSString *tip) {
-		NSButton *b = [NSButton buttonWithImage:
-			([NSImage imageWithSystemSymbolName:sym accessibilityDescription:nil]
-			 ?: [NSImage imageNamed:NSImageNameSmartBadgeTemplate])
-			target:self action:act];
-		b.imageScaling = NSImageScaleProportionallyDown;
-		b.bezelStyle = NSBezelStyleTexturedRounded;
-		b.toolTip = tip;
-		b.translatesAutoresizingMaskIntoConstraints = NO;
-		[b.widthAnchor constraintEqualToConstant:28].active = YES;
-		[b.heightAnchor constraintEqualToConstant:24].active = YES;
-		return b;
-	};
-	NSView * (^SEP)(void) = ^NSView *(void) {
-		NSView *s = [[NSView alloc] initWithFrame:NSZeroRect];
-		s.wantsLayer = YES;
-		s.layer.backgroundColor = [NSColor separatorColor].CGColor;
-		s.translatesAutoresizingMaskIntoConstraints = NO;
-		[s.widthAnchor constraintEqualToConstant:1].active = YES;
-		[s.heightAnchor constraintEqualToConstant:18].active = YES;
-		return s;
+	// 顺序取自 Notepad4.cpp DefaultToolbarButtons（iBitmap, action, dropdown）
+	struct TBEntry { int icon; SEL act; BOOL dropdown; };
+	static const TBEntry kTB[] = {
+		{21, @selector(tbOpenFav), NO},   // Open Favorites
+		{ 2, @selector(tbBrowse), NO},    // Browse...
+		{-1, nullptr, NO},                // ─
+		{ 0, @selector(fileNew), NO},     // New
+		{26, @selector(fileNewWindow), NO}, // New Window
+		{ 1, @selector(tbOpenDropdown), YES}, // Open ▾
+		{-1, nullptr, NO},
+		{ 3, @selector(fileSave), NO},    // Save
+		{17, @selector(fileSaveAs), NO},  // Save As
+		{18, @selector(fileSaveCopy), NO},// Save Copy
+		{-1, nullptr, NO},
+		{ 4, @selector(editUndo), NO},    // Undo
+		{ 5, @selector(editRedo), NO},    // Redo
+		{-1, nullptr, NO},
+		{ 6, @selector(editCut), NO},     // Cut
+		{ 7, @selector(editCopy), NO},    // Copy
+		{ 8, @selector(editPaste), NO},   // Paste
+		{19, @selector(editDelete), NO},  // Delete
+		{-1, nullptr, NO},
+		{ 9, @selector(searchFind), NO},  // Find
+		{10, @selector(searchReplace), NO},// Replace
+		{-1, nullptr, NO},
+		{11, @selector(viewWordWrap), NO},// Word Wrap
+		{-1, nullptr, NO},
+		{23, @selector(tbFoldDropdown), YES}, // Toggle Folds ▾
+		{-1, nullptr, NO},
+		{12, @selector(viewZoomIn), NO},  // Zoom In
+		{13, @selector(viewZoomOut), NO}, // Zoom Out
+		{-1, nullptr, NO},
+		{14, @selector(tbSchemeMenu), NO},// Syntax Scheme
+		{15, @selector(tbSchemeConfig), NO},// Customize Schemes
+		{-1, nullptr, NO},
+		{16, @selector(terminate), NO},   // Exit
 	};
 
-	// 顺序对照截图：New | Open▾ | Save | SaveAs | Print | PrintPreview | ─ | Undo | Redo | ─ |
-	// Cut | Copy | Paste | ─ | Find | FindNext | ─ | Wrap | Folding | ─ | Reload
-	NSArray *items = @[
-		TB(@"doc", @selector(fileNew), @"New (Ctrl+N)"),
-		TB(@"folder", @selector(fileOpen), @"Open... (Ctrl+O)"),
-		TB(@"square.and.arrow.down", @selector(fileSave), @"Save (Ctrl+S)"),
-		TB(@"square.and.arrow.down.on.square", @selector(fileSaveAs), @"Save As... (F6)"),
-		TB(@"printer", @selector(printDocument), @"Print... (Ctrl+P)"),
-		SEP(),
-		TB(@"arrow.uturn.backward", @selector(editUndo), @"Undo (Ctrl+Z)"),
-		TB(@"arrow.uturn.forward", @selector(editRedo), @"Redo (Ctrl+Y)"),
-		SEP(),
-		TB(@"scissors", @selector(editCut), @"Cut (Ctrl+X)"),
-		TB(@"doc.on.doc", @selector(editCopy), @"Copy (Ctrl+C)"),
-		TB(@"doc.on.clipboard", @selector(editPaste), @"Paste (Ctrl+V)"),
-		SEP(),
-		TB(@"magnifyingglass", @selector(searchFind), @"Find... (Ctrl+F)"),
-		TB(@"arrow.down.right", @selector(searchFindNext), @"Find Next (F3)"),
-		TB(@"arrow.left.arrow.right.square", @selector(searchReplace), @"Replace... (Ctrl+H)"),
-		SEP(),
-		TB(@"text.justify", @selector(viewWordWrap), @"Word Wrap (Ctrl+Shift+W)"),
-		TB(@"chevron.left.forwardslash.chevron.right", @selector(viewCodeFolding), @"Code Folding"),
-		TB(@"arrow.clockwise", @selector(fileRevert), @"Reload (F5)"),
-	];
-
-	// 水平排开
 	NSView *prev = nil;
-	for (NSView *v in items) {
+	for (unsigned i = 0; i < sizeof(kTB)/sizeof(kTB[0]); i++) {
+		const TBEntry &e = kTB[i];
+		NSView *v = nil;
+		if (e.icon < 0) {
+			NSView *sep = [[NSView alloc] initWithFrame:NSZeroRect];
+			sep.wantsLayer = YES;
+			sep.layer.backgroundColor = [NSColor separatorColor].CGColor;
+			sep.translatesAutoresizingMaskIntoConstraints = NO;
+			[sep.widthAnchor constraintEqualToConstant:1].active = YES;
+			[sep.heightAnchor constraintEqualToConstant:20].active = YES;
+			v = sep;
+		} else {
+			NSString *name = [NSString stringWithFormat:@"tb%02d", e.icon];
+			NSString *path = [[NSBundle mainBundle] pathForResource:name ofType:@"png"];
+			NSImage *img = path ? [[NSImage alloc] initWithContentsOfFile:path] : nil;
+			NSButton *b = [NSButton buttonWithImage:img ?: [NSImage new] target:self action:e.act];
+			b.bordered = NO;
+			b.imageScaling = NSImageScaleNone;
+			b.translatesAutoresizingMaskIntoConstraints = NO;
+			[b.widthAnchor constraintEqualToConstant:26].active = YES;
+			[b.heightAnchor constraintEqualToConstant:26].active = YES;
+			if (e.dropdown) {
+				// 右下角小三角（Win32 BTNS_DROPDOWN 外观）
+				NSImageView *arrow = [[NSImageView alloc] initWithFrame:NSZeroRect];
+				arrow.image = [NSImage imageWithSystemSymbolName:@"chevron.down" accessibilityDescription:nil];
+				arrow.contentTintColor = [NSColor secondaryLabelColor];
+				arrow.translatesAutoresizingMaskIntoConstraints = NO;
+				[b addSubview:arrow];
+				[arrow.trailingAnchor constraintEqualToAnchor:b.trailingAnchor constant:-1].active = YES;
+				[arrow.bottomAnchor constraintEqualToAnchor:b.bottomAnchor constant:-1].active = YES;
+				[arrow.widthAnchor constraintEqualToConstant:7].active = YES;
+				[arrow.heightAnchor constraintEqualToConstant:7].active = YES;
+			}
+			v = b;
+		}
 		[bar addSubview:v];
 		if (!prev) {
-			[bar.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:2].active = YES;
+			[bar.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:3].active = YES;
+		} else if (e.icon < 0) {
+			[prev.trailingAnchor constraintEqualToAnchor:v.leadingAnchor constant:3].active = YES;
 		} else {
-			[prev.trailingAnchor constraintEqualToAnchor:v.leadingAnchor constant:2].active = YES;
+			[prev.trailingAnchor constraintEqualToAnchor:v.leadingAnchor constant:0].active = YES;
 		}
 		[v.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor].active = YES;
 		prev = v;
 	}
-	// 右侧：词法器下拉（截图最右是循环箭头=reload，下拉在工具栏末尾之外；但 F12 Scheme 更常用，放这）
-	NSPopUpButton *lex = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-	lex.translatesAutoresizingMaskIntoConstraints = NO;
-	for (NSDictionary *info in [LexerRegistry allLexersInfo]) {
-		[lex addItemWithTitle:info[@"name"]];
-		lex.lastItem.representedObject = info;
-	}
-	[bar addSubview:lex];
-	[prev.trailingAnchor constraintEqualToAnchor:lex.leadingAnchor constant:8].active = YES;
-	[lex.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor].active = YES;
-	[bar.trailingAnchor constraintEqualToAnchor:lex.trailingAnchor constant:4].active = YES;
-	[lex.widthAnchor constraintEqualToConstant:150].active = YES;
-	_lexPopup = lex;
+	[bar.trailingAnchor constraintGreaterThanOrEqualToAnchor:prev.trailingAnchor constant:4].active = YES;
 
 	// ---- 编辑器（占满中间）----
 	_editorHost = [[NSView alloc] initWithFrame:NSZeroRect];
@@ -376,8 +394,9 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MSep(scheme);
 	NSMenuItem *thm = MI(scheme, @"Style Theme", nil, @"", 0);
 	NSMenu *thms = M(@"");
-	MI(thms, @"Default", @selector(themeDefault), @"", 0);
-	MI(thms, @"Dark", @selector(themeDark), @"", 0);
+	_themeDefaultItem = MI(thms, @"Default", @selector(themeDefault), @"", 0);
+	_themeDarkItem = MI(thms, @"Dark", @selector(themeDark), @"", 0);
+	_themeDarkItem.state = NSControlStateValueOn;   // 默认暗色
 	thm.submenu = thms;
 	{ NSMenuItem *_it_scheme = [mb addItemWithTitle:@"Scheme" action:nil keyEquivalent:@""]; _it_scheme.submenu = scheme; }
 
@@ -726,8 +745,18 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[_document applyLexerForExtension:[first stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
 	[self refreshStatus];
 }
-- (void)themeDefault {}
-- (void)themeDark {}
+- (void)themeDefault {
+	[_document setTheme:NPThemeDefault];
+	_themeDefaultItem.state = NSControlStateValueOn;
+	_themeDarkItem.state = NSControlStateValueOff;
+	[self refreshStatus];
+}
+- (void)themeDark {
+	[_document setTheme:NPThemeDark];
+	_themeDefaultItem.state = NSControlStateValueOff;
+	_themeDarkItem.state = NSControlStateValueOn;
+	[self refreshStatus];
+}
 
 #pragma mark - Tools
 

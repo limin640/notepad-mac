@@ -3,6 +3,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import "MainWindowController.h"
 #import "EditorDocument.h"
+#import "NPTheme.h"
 
 #import <memory>
 
@@ -42,10 +43,13 @@ int main(int argc, const char *argv[]) {
 				NSString *ext = @"cpp";
 				// --code <src> [--ext py] [--find needle]
 				NSString *needle = nil;
+				BOOL darkTheme = NO;
 				for (int i = 5; i < argc - 1; i++) {
 					if (strcmp(argv[i], "--ext") == 0) ext = [NSString stringWithUTF8String:argv[i+1]];
 					if (strcmp(argv[i], "--find") == 0) needle = [NSString stringWithUTF8String:argv[i+1]];
+					if (strcmp(argv[i], "--theme") == 0) darkTheme = (strcmp(argv[i+1], "dark") == 0);
 				}
+				if (darkTheme) [doc setTheme:NPThemeDark];
 				[doc applyLexerForExtension:ext];
 				[controller refreshStatus];
 				NSLog(@"[diag] codepage=%ld len=%ld", (long)[doc.editor message:SCI_GETCODEPAGE], (long)[doc.editor message:SCI_GETLENGTH]);
@@ -70,9 +74,13 @@ int main(int argc, const char *argv[]) {
 					NSMutableString *tree = [NSMutableString string];
 					DumpViewTree([[controller window] contentView], 0, tree);
 					[tree writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-				} else if ([path hasSuffix:@".pdf"]) {
-					NSData *pdf = [[[controller window] contentView] dataWithPDFInsideRect:[[[controller window] contentView] bounds]];
-					[pdf writeToFile:path atomically:YES];
+				} else if ([path hasSuffix:@".pdf"] || [path hasSuffix:@".png"]) {
+					// cacheDisplay 渲染（不走打印管线，避免 printJobTitle 异常）
+					NSView *v = [[controller window] contentView];
+					NSBitmapImageRep *rep = [v bitmapImageRepForCachingDisplayInRect:v.bounds];
+					[v cacheDisplayInRect:v.bounds toBitmapImageRep:rep];
+					NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+					[png writeToFile:path atomically:YES];
 				}
 				[NSApp terminate:nil];
 			});
