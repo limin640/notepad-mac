@@ -63,6 +63,7 @@
 	NSMenuItem *_lineNumbersItem;
 	StatusBarView *_statusBar;
 	EditorDocument *_document;
+	NSMenuItem *_themeAutoItem;
 	NSMenuItem *_themeDefaultItem;
 	NSMenuItem *_themeDarkItem;
 }
@@ -86,8 +87,14 @@
 		[self buildMenu];   // 按 Notepad4.rc 原文复刻
 		[self refreshStatus];
 		[self updateWindowTitle];
+		[NSApp addObserver:self forKeyPath:@"effectiveAppearance"
+			options:NSKeyValueObservingOptionNew context:nullptr];
 	}
 	return self;
+}
+
+- (void)dealloc {
+	[NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
 }
 
 #pragma mark - 布局（工具栏 / 编辑器 / 状态栏，单文档无标签）
@@ -433,9 +440,10 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MSep(scheme);
 	NSMenuItem *thm = MI(scheme, @"Style Theme", nil, @"", 0);
 	NSMenu *thms = M(@"");
-	_themeDefaultItem = MI(thms, @"Default", @selector(themeDefault), @"", 0);
+	_themeAutoItem = MI(thms, @"Follow System", @selector(themeAuto), @"", 0);
+	_themeDefaultItem = MI(thms, @"Light", @selector(themeDefault), @"", 0);
 	_themeDarkItem = MI(thms, @"Dark", @selector(themeDark), @"", 0);
-	_themeDarkItem.state = NSControlStateValueOn;   // 默认暗色
+	[self updateThemeMenuState];
 	thm.submenu = thms;
 	{ NSMenuItem *_it_scheme = [mb addItemWithTitle:@"Scheme" action:nil keyEquivalent:@""]; _it_scheme.submenu = scheme; }
 
@@ -792,17 +800,38 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[_document applyLexerForExtension:[first stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
 	[self refreshStatus];
 }
-- (void)themeDefault {
-	[_document setTheme:NPThemeDefault];
-	_themeDefaultItem.state = NSControlStateValueOn;
-	_themeDarkItem.state = NSControlStateValueOff;
+- (void)updateThemeMenuState {
+	const NPThemeMode mode = NPThemeModeGet();
+	_themeAutoItem.state = (mode == NPThemeModeAuto) ? NSControlStateValueOn : NSControlStateValueOff;
+	_themeDefaultItem.state = (mode == NPThemeModeLight) ? NSControlStateValueOn : NSControlStateValueOff;
+	_themeDarkItem.state = (mode == NPThemeModeDark) ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+// 切换主题模式：写盘 + 设应用外观 + 重刷编辑器与 chrome
+- (void)applyThemeMode:(NPThemeMode)mode {
+	NPThemeModeSet(mode);
+	[_document setTheme:NPThemeResolve(mode)];
+	[self updateThemeMenuState];
+	[self.window.contentView setNeedsDisplay:YES];
 	[self refreshStatus];
 }
-- (void)themeDark {
-	[_document setTheme:NPThemeDark];
-	_themeDefaultItem.state = NSControlStateValueOff;
-	_themeDarkItem.state = NSControlStateValueOn;
-	[self refreshStatus];
+
+- (void)themeAuto { [self applyThemeMode:NPThemeModeAuto]; }
+- (void)themeDefault { [self applyThemeMode:NPThemeModeLight]; }
+- (void)themeDark { [self applyThemeMode:NPThemeModeDark]; }
+
+// 系统外观变化：仅跟随模式下重刷
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
+	change:(NSDictionary *)change context:(void *)context {
+	if (object == NSApp && [keyPath isEqualToString:@"effectiveAppearance"]) {
+		if (NPThemeModeGet() == NPThemeModeAuto) {
+			[_document setTheme:NPThemeResolve(NPThemeModeAuto)];
+			[self.window.contentView setNeedsDisplay:YES];
+			[self refreshStatus];
+		}
+		return;
+	}
+	[super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
 }
 
 #pragma mark - Tools

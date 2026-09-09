@@ -124,12 +124,8 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	[_editor message:SCI_AUTOCSETCANCELATSTART wParam:1 lParam:0];
 	[_editor message:SCI_AUTOCSETDROPRESTOFWORD wParam:1 lParam:0];
 
-	// 主题跟随系统/应用外观（Scheme 菜单可手动切换）
-	NSAppearance *eff = NSApp.appearance ?: NSApp.effectiveAppearance
-		?: [NSAppearance currentDrawingAppearance];
-	NSString *best = [eff bestMatchFromAppearancesWithNames:
-		@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
-	_theme = [best isEqualToString:NSAppearanceNameDarkAqua] ? NPThemeDark : NPThemeDefault;
+	// 主题按 Scheme 菜单选择解析：跟随系统 / 强制亮 / 强制暗
+	_theme = NPThemeResolve(NPThemeModeGet());
 	NPApplyTheme(_editor, _theme, nullptr);
 	[self updateLineNumberWidth];
 

@@ -67,6 +67,16 @@ int main(int argc, const char *argv[]) {
 		NSApplication *app = [NSApplication sharedApplication];
 		[app setActivationPolicy:NSApplicationActivationPolicyRegular];
 
+		// 恢复上次的主题模式（跟随系统 / 亮 / 暗）
+		NPThemeModeSet(NPThemeModeGet());
+
+		// --thememode auto|light|dark：进程内覆盖，不写盘（测试用）
+		if (const char *tm = ArgValue(argc, argv, "--thememode")) {
+			if (strcmp(tm, "light") == 0) NPThemeModeOverrideForTesting(NPThemeModeLight);
+			else if (strcmp(tm, "dark") == 0) NPThemeModeOverrideForTesting(NPThemeModeDark);
+			else NPThemeModeOverrideForTesting(NPThemeModeAuto);
+		}
+
 		if (const char *ap = ArgValue(argc, argv, "--appearance")) {
 			app.appearance = [NSAppearance appearanceNamed:
 				(strcmp(ap, "light") == 0) ? NSAppearanceNameAqua : NSAppearanceNameDarkAqua];
@@ -121,6 +131,61 @@ int main(int argc, const char *argv[]) {
 				[NSApp terminate:nil];
 			});
 		}
+		// --themeswitchtest：依次执行 Scheme 菜单三个动作，校验模式与编辑器主题，结束前还原
+		if (ArgPresent(argc, argv, "--themeswitchtest")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				const NPThemeMode saved = NPThemeModeGet();
+				for (NSString *name in @[@"themeDefault", @"themeDark", @"themeAuto"]) {
+					[controller performSelector:NSSelectorFromString(name)];
+					NSLog(@"[ts] %@ -> mode=%ld theme=%ld appAppearance=%@", name,
+						(long)NPThemeModeGet(), (long)[controller.editorDocument theme],
+						NSApp.appearance.name ?: @"nil(跟随系统)");
+				}
+				NPThemeModeSet(saved);
+				[NSApp terminate:nil];
+			});
+		}
+		// --realkeys：用 CGEventPostToPid 发送真实按键（不抢系统焦点）
+		if (ArgPresent(argc, argv, "--realkeys")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				NSWindow *w = [controller window];
+				EditorDocument *doc = controller.editorDocument;
+				[w makeKeyWindow];
+				NSLog(@"[rk] key=%d fr=%@", (int)w.isKeyWindow,
+					NSStringFromClass([[w firstResponder] class]));
+				const char *text = "int ma";
+				NSMutableString *steps = [NSMutableString string];
+				for (const char *p = text; *p; p++) {
+					UniChar ch = *p;
+					CGEventRef ev = CGEventCreateKeyboardEvent(NULL, 0, true);
+					CGEventKeyboardSetUnicodeString(ev, 1, &ch);
+					CGEventPostToPid(getpid(), ev);
+					CFRelease(ev);
+					usleep(120000);
+					[steps appendFormat:@"%ld(a=%ld) ", (long)[doc.editor message:SCI_GETLENGTH],
+						(long)[doc.editor message:SCI_AUTOCACTIVE]];
+				}
+				dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+					dispatch_get_main_queue(), ^{
+					NSLog(@"[rk] 逐步: %@ | 内容=%@", steps, [doc.editor string]);
+					[NSApp terminate:nil];
+				});
+			});
+		}
+		// --typewatch：激活后 4 秒记录文档内容（配合外部 System Events 真实键入）
+		if (ArgPresent(argc, argv, "--typewatch")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12.0 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				EditorDocument *doc = controller.editorDocument;
+				NSLog(@"[tw] len=%ld autoc=%ld content=%@",
+					(long)[doc.editor message:SCI_GETLENGTH],
+					(long)[doc.editor message:SCI_AUTOCACTIVE],
+					[doc.editor string]);
+				[NSApp terminate:nil];
+			});
+		}
 		if (ArgPresent(argc, argv, "--inputtest")) {
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
 				dispatch_get_main_queue(), ^{
@@ -144,14 +209,19 @@ int main(int argc, const char *argv[]) {
 				BOOL ok = [w makeFirstResponder:content];
 				NSLog(@"[input] makeFR=%d now=%@", (int)ok,
 					NSStringFromClass([[w firstResponder] class]));
-				for (const char *p = "abc"; *p; p++) {
+				const char *text = "int ma";
+				NSMutableString *steps = [NSMutableString string];
+				for (const char *p = text; *p; p++) {
 					NSString *ch = [NSString stringWithFormat:@"%c", *p];
 					NSEvent *ev = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
 						modifierFlags:0 timestamp:0 windowNumber:w.windowNumber context:nil
 						characters:ch charactersIgnoringModifiers:ch isARepeat:NO keyCode:0];
-					[w sendEvent:ev];
+					[NSApp sendEvent:ev];   // 走真实路由（key window），复现用户路径
+					[steps appendFormat:@"%ld(autoc=%ld) ", (long)[doc.editor message:SCI_GETLENGTH],
+						(long)[doc.editor message:SCI_AUTOCACTIVE]];
 				}
-				NSLog(@"[input] len=%ld", (long)[doc.editor message:SCI_GETLENGTH]);
+				NSLog(@"[input] 逐步长度: %@ | 内容=%@", steps,
+					[doc.editor string]);
 				long nBtn = 0, nImg = 0;
 				for (NSView *v in [[w contentView] subviews]) {
 					for (NSView *sub in [v subviews]) {

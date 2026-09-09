@@ -9,11 +9,19 @@ typedef NS_ENUM(NSInteger, NPThemeKind) {
 	NPThemeDark = 1,      // StyleTheme_Dark
 };
 
+// 主题模式：跟随系统 / 强制亮 / 强制暗（持久化到 NSUserDefaults）
+typedef NS_ENUM(NSInteger, NPThemeMode) {
+	NPThemeModeAuto = 0,
+	NPThemeModeLight = 1,
+	NPThemeModeDark = 2,
+};
+
 typedef struct NPThemeColors {
 	uint32_t defFore, defBack;          // Default Code Style
 	uint32_t marginFore, marginBack;    // Margin and Line Number (size:-2)
 	uint32_t caretFore;                 // SC_ELEMENT_CARET
 	uint32_t caretLineFrame;            // Current Line (outline frame)
+	uint32_t caretLineAlpha;            // Current Line outline 透明度（stl 90 / dark 25）
 	uint32_t foldFore, foldBack;        // Folding Marker
 	uint32_t foldLine;                  // Code Folding fore
 	uint32_t indentGuide;               // Indentation Guide
@@ -31,6 +39,7 @@ static const NPThemeColors kNPThemeLight = {
 	.marginFore = 0x2B91AF, .marginBack = 0xFFFFFF,
 	.caretFore = 0x000000,
 	.caretLineFrame = 0xC2C0C3,
+	.caretLineAlpha = 90,
 	.foldFore = 0x8080FF, .foldBack = 0xADD8E6,
 	.foldLine = 0x808080,
 	.indentGuide = 0xFF8000,
@@ -48,6 +57,7 @@ static const NPThemeColors kNPThemeDark = {
 	.marginFore = 0xA0A0A0, .marginBack = 0x2A2A2E,
 	.caretFore = 0xFFFFFF,
 	.caretLineFrame = 0xC2C0C3,
+	.caretLineAlpha = 25,
 	.foldFore = 0x808080, .foldBack = 0x606060,
 	.foldLine = 0xFF8000,
 	.indentGuide = 0x605F63,
@@ -63,6 +73,11 @@ static const NPThemeColors kNPThemeDark = {
 extern "C" {
 #endif
 const NPThemeColors *NPThemeColorsFor(NPThemeKind kind);
+NPThemeMode NPThemeModeGet(void);
+void NPThemeModeSet(NPThemeMode mode);
+NPThemeKind NPThemeResolve(NPThemeMode mode);
+// 测试用：进程内覆盖模式，不写盘
+void NPThemeModeOverrideForTesting(NPThemeMode mode);
 #ifdef __cplusplus
 }
 #endif

@@ -18,6 +18,56 @@ static inline sptr_t ScRGBA(uint32_t rgb, uint32_t alpha) {
 	return (sptr_t)((alpha << 24) | (uint32_t)ScRGB(rgb));
 }
 
+static NSString *const NPThemeModeKey = @"NPThemeMode";
+static BOOL sModeOverride = NO;
+static NPThemeMode sModeOverrideValue = NPThemeModeAuto;
+
+// 主题模式（默认跟随系统）
+NPThemeMode NPThemeModeGet(void) {
+	if (sModeOverride) return sModeOverrideValue;
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	if ([d objectForKey:NPThemeModeKey] == nil) return NPThemeModeAuto;
+	const NSInteger v = [d integerForKey:NPThemeModeKey];
+	return (v == NPThemeModeLight || v == NPThemeModeDark) ? (NPThemeMode)v : NPThemeModeAuto;
+}
+
+// 只应用外观（nil = 跟随系统）
+static void NPThemeAppearanceApply(NPThemeMode mode) {
+	switch (mode) {
+	case NPThemeModeLight:
+		NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+		break;
+	case NPThemeModeDark:
+		NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+		break;
+	default:
+		NSApp.appearance = nil;
+		break;
+	}
+}
+
+// 写盘 + 应用外观
+void NPThemeModeSet(NPThemeMode mode) {
+	[[NSUserDefaults standardUserDefaults] setInteger:mode forKey:NPThemeModeKey];
+	NPThemeAppearanceApply(mode);
+}
+
+void NPThemeModeOverrideForTesting(NPThemeMode mode) {
+	sModeOverride = YES;
+	sModeOverrideValue = mode;
+	NPThemeAppearanceApply(mode);
+}
+
+// 按模式解析出实际生效的编辑器主题
+NPThemeKind NPThemeResolve(NPThemeMode mode) {
+	if (mode == NPThemeModeLight) return NPThemeDefault;
+	if (mode == NPThemeModeDark) return NPThemeDark;
+	NSAppearance *eff = NSApp.effectiveAppearance ?: NSAppearance.currentDrawingAppearance;
+	NSString *best = [eff bestMatchFromAppearancesWithNames:
+		@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+	return [best isEqualToString:NSAppearanceNameDarkAqua] ? NPThemeDark : NPThemeDefault;
+}
+
 // 应用主题：全局样式 + 边距 + 光标 + 折叠 + 当前行，并重刷词法器配色
 void NPApplyTheme(ScintillaView *e, NPThemeKind kind, const EDITLEXER *lex) {
 	const NPThemeColors *c = NPThemeColorsFor(kind);
@@ -42,11 +92,14 @@ void NPApplyTheme(ScintillaView *e, NPThemeKind kind, const EDITLEXER *lex) {
 		lParam:ScRGBA(c->caretFore, 0xFF)];
 
 	// 4. 当前行：outline frame（Notepad4 默认 HighlightCurrentLine = subline + OutlineFrame）
+	// 对照 Notepad4 Style_HighlightCurrentLine()：OutlineFrame 模式取 fore 色 + outline 透明度，
+	// 并置于 SC_LAYER_UNDER_TEXT，否则 Scintilla 把边框画成不透明实色（暗色下即一条白带）
 	[e message:SCI_SETCARETLINEVISIBLEALWAYS wParam:1 lParam:0];
 	[e message:SCI_SETCARETLINEFRAME wParam:2 lParam:0];
 	[e message:SCI_SETCARETLINEHIGHLIGHTSUBLINE wParam:1 lParam:0];
+	[e message:SCI_SETCARETLINELAYER wParam:SC_LAYER_UNDER_TEXT lParam:0];
 	[e message:SCI_SETELEMENTCOLOUR wParam:SC_ELEMENT_CARET_LINE_BACK
-		lParam:ScRGBA(c->caretLineFrame, 0xFF)];
+		lParam:ScRGBA(c->caretLineFrame, c->caretLineAlpha)];
 
 	// 5. 缩进线 / 空白 / 行尾（默认关，仅设颜色）
 	[e message:SCI_SETINDENTATIONGUIDES wParam:SC_IV_NONE lParam:0];
