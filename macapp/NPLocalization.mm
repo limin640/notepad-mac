@@ -218,6 +218,8 @@ static NSDictionary<NSString *, NSString *> *NPLTable(void) {
 			@"Command exited with status %d": @"命令退出状态 %d",
 			@"Reload with Encoding...": @"指定编码重新载入...",
 			@"Services": @"服务",
+			@"Add to Favorites": @"添加到收藏夹",
+			@"No favorites": @"（无收藏）",
 			@"No recent files": @"（无最近文件）",
 			@"Properties": @"属性",
 			@"Failed to save backup": @"保存备份失败",

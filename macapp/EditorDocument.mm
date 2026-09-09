@@ -94,6 +94,8 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 
 	// ---- Notepad4 默认（对照 Styles.cpp / stlDefault.cpp）----
 	[_editor message:SCI_SETCODEPAGE wParam:SC_CP_UTF8 lParam:0];
+	[_editor message:SCI_SETWORDCHARS wParam:0
+		lParam:(sptr_t)"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"];
 
 	// 代码字体：Cascadia Mono -> Consolas，macOS 用 Menlo；默认 11pt（Style_DetectBaseFontSize）
 	[_editor setStringProperty:SCI_STYLESETFONT parameter:STYLE_DEFAULT value:@"Menlo"];

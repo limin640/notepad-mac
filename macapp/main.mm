@@ -181,7 +181,7 @@ int main(int argc, const char *argv[]) {
 			[controller performSelector:@selector(searchSelectWord)];
 			const sptr_t sw0 = [d.editor message:SCI_GETSELECTIONSTART];
 			const sptr_t sw1 = [d.editor message:SCI_GETSELECTIONEND];
-			[d.editor message:SCI_GOTOPOS wParam:20 lParam:0];
+			[d.editor message:SCI_GOTOPOS wParam:21 lParam:0];
 			[controller performSelector:@selector(searchFindMatchingBrace)];
 			const sptr_t br0 = [d.editor message:SCI_GETSELECTIONSTART];
 			const sptr_t br1 = [d.editor message:SCI_GETSELECTIONEND];
@@ -197,6 +197,12 @@ int main(int argc, const char *argv[]) {
 			[d writeContentsToURL:src updateIdentity:YES error:nil];
 			[controller performSelector:@selector(fileSaveBackup)];
 			const BOOL bakOK = [[NSFileManager defaultManager] fileExistsAtPath:@"/tmp/np4ft.txt.bak"];
+			[controller performSelector:@selector(addCurrentToFavorites)];
+			NSArray *favs = [[NSUserDefaults standardUserDefaults] arrayForKey:@"NP4Favorites"] ?: @[];
+			const BOOL favOK = [favs containsObject:@"/tmp/np4ft.txt"];
+			[controller performSelector:@selector(toggleMenuBar)];
+			[controller.window.contentView layoutSubtreeIfNeeded];
+			[controller performSelector:@selector(toggleMenuBar)];
 			NSMutableString *mbTitles = [NSMutableString string];
 			for (NSView *v in controller.window.contentView.subviews) {
 				if (v.frame.size.height > 24) continue;
@@ -215,10 +221,10 @@ int main(int argc, const char *argv[]) {
 				[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
 					writeToFile:@"/tmp/np4_menubar.png" atomically:YES];
 			}
-			NSLog(@"[fn] inv=%@ title=%@ word=%ld-%ld brace=%ld-%ld cmtHas=%d autoc=%ld bak=%d menus=%@",
+			NSLog(@"[fn] inv=%@ title=%@ word=%ld-%ld brace=%ld-%ld cmtHas=%d autoc=%ld bak=%d fav=%d menus=%@",
 				afterInv, afterTitle, (long)sw0, (long)sw1, (long)br0, (long)br1,
 				(int)([afterCmt containsString:@"//int"] || [afterCmt containsString:@"// int"]),
-				(long)autoc, (int)bakOK, mbTitles);
+				(long)autoc, (int)bakOK, (int)favOK, mbTitles);
 			[NSApp terminate:nil];
 		}
 		// --selwatch：8 秒后报告选区长度（配合外部真实 ⌘A 验证窗口内菜单快捷键）

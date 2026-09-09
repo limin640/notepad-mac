@@ -23,6 +23,24 @@
 }
 @end
 
+@interface NPMenuBarButton : NSButton
+@end
+@implementation NPMenuBarButton
+- (void)updateTrackingAreas {
+	[super updateTrackingAreas];
+	for (NSTrackingArea *a in [self.trackingAreas copy]) [self removeTrackingArea:a];
+	[self addTrackingArea:[[NSTrackingArea alloc] initWithRect:self.bounds
+		options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways)
+		owner:self userInfo:nil]];
+}
+- (void)mouseEntered:(NSEvent *)e {
+	self.wantsLayer = YES;
+	self.layer.cornerRadius = 4;
+	self.layer.backgroundColor = [[NSColor selectedContentBackgroundColor] colorWithAlphaComponent:0.35].CGColor;
+}
+- (void)mouseExited:(NSEvent *)e { self.layer.backgroundColor = nil; }
+@end
+
 // 工具栏按钮：只做命中测试，图标由 NPChromeView 统一绘制
 @interface NPImageButton : NSView
 @property (nonatomic, strong) NSImage *icon;
@@ -85,6 +103,9 @@
 	NSMenuItem *_themeAutoItem;
 	NSMenuItem *_themeDefaultItem;
 	NSMenuItem *_themeDarkItem;
+	NSLayoutConstraint *_menuBarHeight;
+	NSLayoutConstraint *_toolBarHeight;
+	NSLayoutConstraint *_statusBarHeight;
 }
 @dynamic editorDocument;
 
@@ -115,6 +136,7 @@
 }
 
 - (void)dealloc {
+	if (_keyMonitor) [NSEvent removeMonitor:_keyMonitor];
 	[NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
 }
 
@@ -239,11 +261,13 @@
 	[root.leadingAnchor constraintEqualToAnchor:mb.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:mb.trailingAnchor].active = YES;
 	[root.topAnchor constraintEqualToAnchor:mb.topAnchor].active = YES;
-	[mb.heightAnchor constraintEqualToConstant:22].active = YES;
+	_menuBarHeight = [mb.heightAnchor constraintEqualToConstant:22];
+	_menuBarHeight.active = YES;
 	[mb.bottomAnchor constraintEqualToAnchor:bar.topAnchor].active = YES;
 	[root.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor].active = YES;
-	[bar.heightAnchor constraintEqualToConstant:26].active = YES;
+	_toolBarHeight = [bar.heightAnchor constraintEqualToConstant:26];
+	_toolBarHeight.active = YES;
 
 	[root.leadingAnchor constraintEqualToAnchor:_editorHost.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:_editorHost.trailingAnchor].active = YES;
@@ -251,7 +275,8 @@
 
 	[root.leadingAnchor constraintEqualToAnchor:_statusBar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:_statusBar.trailingAnchor].active = YES;
-	[_statusBar.heightAnchor constraintEqualToConstant:22].active = YES;
+	_statusBarHeight = [_statusBar.heightAnchor constraintEqualToConstant:22];
+	_statusBarHeight.active = YES;
 	[_editorHost.bottomAnchor constraintEqualToAnchor:_statusBar.topAnchor].active = YES;
 	[root.bottomAnchor constraintEqualToAnchor:_statusBar.bottomAnchor].active = YES;
 
@@ -273,6 +298,7 @@ static NSMenuItem *MI(NSMenu *m, NSString *title, SEL act, NSString *key, NSEven
 	return i;
 }
 static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
+static NSString *Fn(unichar k) { return [NSString stringWithCharacters:&k length:1]; }
 
 - (void)buildMenu {
 	NSMenu *mb = [[NSMenu alloc] init];
@@ -289,11 +315,15 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[appMenu addItemWithTitle:NPL(@"Quit Notepad4") action:@selector(terminate:) keyEquivalent:@"q"];
 	appItem.submenu = appMenu;
 
-	NSString *F3 = [NSString stringWithFormat:@"%d", NSF3FunctionKey];
-	NSString *F5 = [NSString stringWithFormat:@"%d", NSF5FunctionKey];
-	NSString *F6 = [NSString stringWithFormat:@"%d", NSF6FunctionKey];
-	NSString *F10 = [NSString stringWithFormat:@"%d", NSF10FunctionKey];
-	NSString *F12 = [NSString stringWithFormat:@"%d", NSF12FunctionKey];
+	NSString *F2 = Fn(NSF2FunctionKey);
+	NSString *F3 = Fn(NSF3FunctionKey);
+	NSString *F4 = Fn(NSF4FunctionKey);
+	NSString *F5 = Fn(NSF5FunctionKey);
+	NSString *F6 = Fn(NSF6FunctionKey);
+	NSString *F7 = Fn(NSF7FunctionKey);
+	NSString *F10 = Fn(NSF10FunctionKey);
+	NSString *F11 = Fn(NSF11FunctionKey);
+	NSString *F12 = Fn(NSF12FunctionKey);
 
 	// ===== File =====
 	NSMenu *file = M(NPL(@"File"));
@@ -384,8 +414,8 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	sel.submenu = sels;
 	NSMenuItem *lines = MI(edit, NPL(@"Lines"), nil, @"", 0);
 	NSMenu *lss = M(NPL(@""));
-	MI(lss, NPL(@"Move Up\tAlt+Up"), @selector(editMoveLineUp), [NSString stringWithFormat:@"%d", NSUpArrowFunctionKey], NSEventModifierFlagOption);
-	MI(lss, NPL(@"Move Down\tAlt+Down"), @selector(editMoveLineDown), [NSString stringWithFormat:@"%d", NSDownArrowFunctionKey], NSEventModifierFlagOption);
+	MI(lss, NPL(@"Move Up\tAlt+Up"), @selector(editMoveLineUp), Fn(NSUpArrowFunctionKey), NSEventModifierFlagOption);
+	MI(lss, NPL(@"Move Down\tAlt+Down"), @selector(editMoveLineDown), Fn(NSDownArrowFunctionKey), NSEventModifierFlagOption);
 	MI(lss, NPL(@"Transpose\tAlt+S"), @selector(editTranspose), @"s", NSEventModifierFlagOption);
 	MSep(lss);
 	MI(lss, NPL(@"Duplicate Line\tCtrl+D"), @selector(editDuplicateLine), @"d", 0);
@@ -425,19 +455,19 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MI(search, NPL(@"Find Next\tF3"), @selector(searchFindNext), F3, 0);
 	MI(search, NPL(@"Find Previous\tShift+F3"), @selector(searchFindPrev), F3, NSEventModifierFlagShift);
 	MI(search, NPL(@"Replace...\tCtrl+H"), @selector(searchReplace), @"h", 0);
-	MI(search, NPL(@"Replace Next\tF4"), @selector(searchReplaceNext), [NSString stringWithFormat:@"%d", NSF4FunctionKey], 0);
+	MI(search, NPL(@"Replace Next\tF4"), @selector(searchReplaceNext), F4, 0);
 	MSep(search);
 	MI(search, NPL(@"Find Matching Brace\tCtrl+B"), @selector(searchFindMatchingBrace), @"b", 0);
 	MI(search, NPL(@"Select Word"), @selector(searchSelectWord), @"", 0);
 	MSep(search);
 	NSMenuItem *bm = MI(search, NPL(@"Bookmarks"), nil, @"", 0);
 	NSMenu *bms = M(NPL(@""));
-	MI(bms, NPL(@"Toggle\tCtrl+F2"), @selector(bookmarkToggle), @"", NSEventModifierFlagCommand);
+	MI(bms, NPL(@"Toggle\tCtrl+F2"), @selector(bookmarkToggle), F2, NSEventModifierFlagCommand);
 	MSep(bms);
-	MI(bms, NPL(@"Goto Next\tF2"), @selector(bookmarkNext), [NSString stringWithFormat:@"%d", NSF2FunctionKey], 0);
-	MI(bms, NPL(@"Goto Previous\tShift+F2"), @selector(bookmarkPrev), [NSString stringWithFormat:@"%d", NSF2FunctionKey], NSEventModifierFlagShift);
+	MI(bms, NPL(@"Goto Next\tF2"), @selector(bookmarkNext), F2, 0);
+	MI(bms, NPL(@"Goto Previous\tShift+F2"), @selector(bookmarkPrev), F2, NSEventModifierFlagShift);
 	MSep(bms);
-	MI(bms, NPL(@"Clear All\tAlt+F2"), @selector(bookmarkClear), @"", 0);
+	MI(bms, NPL(@"Clear All\tAlt+F2"), @selector(bookmarkClear), F2, NSEventModifierFlagOption);
 	bm.submenu = bms;
 	NSMenuItem *go = MI(search, NPL(@"Goto"), nil, @"", 0);
 	NSMenu *gom = M(NPL(@""));
@@ -468,7 +498,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MI(zmm, NPL(@"Zoom Out\tCtrl+-"), @selector(viewZoomOut), @"-", 0);
 	MI(zmm, NPL(@"Reset Zoom\tCtrl+\\"), @selector(viewZoomReset), @"\\", 0);
 	zm.submenu = zmm;
-	MI(view, NPL(@"Toggle Full Screen\tF11"), @selector(toggleFullScreen), [NSString stringWithFormat:@"%d", NSF11FunctionKey], 0);
+	MI(view, NPL(@"Toggle Full Screen\tF11"), @selector(toggleFullScreen), F11, 0);
 	{ NSMenuItem *_it_view = [mb addItemWithTitle:NPL(@"View") action:nil keyEquivalent:@""]; _it_view.submenu = view; }
 
 	// ===== Scheme =====
@@ -504,7 +534,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	MI(aps, NPL(@"Show Statusbar\tShift+F11"), @selector(toggleStatusBar), @"", 0);
 	ap.submenu = aps;
 	MI(settings, NPL(@"Save Settings On Exit"), @selector(settingsSaveOnExit), @"", 0);
-	MI(settings, NPL(@"Save Settings Now\tF7"), @selector(settingsSaveNow), [NSString stringWithFormat:@"%d", NSF7FunctionKey], 0);
+	MI(settings, NPL(@"Save Settings Now\tF7"), @selector(settingsSaveNow), F7, 0);
 	{ NSMenuItem *_it_settings = [mb addItemWithTitle:NPL(@"Settings") action:nil keyEquivalent:@""]; _it_settings.submenu = settings; }
 
 	// ===== Tools =====
@@ -573,7 +603,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	_menuBarButtons = [NSMutableArray array];
 	NSView *prev = nil;
 	for (NSUInteger i = 0; i < titles.count; i++) {
-		NSButton *b = [NSButton buttonWithTitle:titles[i] target:self action:@selector(menuBarClicked:)];
+		NPMenuBarButton *b = [NPMenuBarButton buttonWithTitle:titles[i] target:self action:@selector(menuBarClicked:)];
 		b.bordered = NO;
 		b.font = [NSFont systemFontOfSize:12];
 		b.contentTintColor = [NSColor labelColor];
@@ -592,6 +622,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 
 - (void)menuBarClicked:(NSButton *)b {
 	if (b.tag < 0 || (NSUInteger)b.tag >= _inWindowMenus.count) return;
+	if (!self.window.isKeyWindow) return; // --quiet/--headless：不弹出覆盖用户屏幕的菜单窗
 	NSMenu *menu = _inWindowMenus[b.tag];
 	b.wantsLayer = YES;
 	b.layer.backgroundColor = [NSColor selectedContentBackgroundColor].CGColor;
@@ -636,8 +667,31 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	return NO;
 }
 
+- (BOOL)findFieldIsEditing {
+	NSResponder *fr = self.window.firstResponder;
+	if ([fr isKindOfClass:[NSTextView class]] && [(NSTextView *)fr isFieldEditor]) return YES;
+	if ([fr isKindOfClass:[NSControl class]] &&
+		([fr isKindOfClass:[NSTextField class]] || [fr isKindOfClass:[NSSearchField class]])) return YES;
+	return NO;
+}
+- (void)undo:(id)sender { [self editUndo]; }
+- (void)redo:(id)sender { [self editRedo]; }
+- (void)cut:(id)sender { [self editCut]; }
+- (void)copy:(id)sender { [self editCopy]; }
+- (void)paste:(id)sender { [self editPaste]; }
+- (void)delete:(id)sender { [self editDelete]; }
+- (void)selectAll:(id)sender { [self editSelectAll]; }
 - (BOOL)handleKeyEquivalent:(NSEvent *)event {
-	id editTarget = _document.editor.content;
+	const NSEventModifierFlags mods = event.modifierFlags
+		& (NSEventModifierFlagCommand | NSEventModifierFlagOption
+		   | NSEventModifierFlagControl | NSEventModifierFlagShift);
+	const unichar ch = event.charactersIgnoringModifiers.length
+		? [event.charactersIgnoringModifiers characterAtIndex:0] : 0;
+	const BOOL isFn = (ch >= NSF1FunctionKey && ch <= NSF35FunctionKey)
+		|| ch == NSUpArrowFunctionKey || ch == NSDownArrowFunctionKey;
+	if (!(mods & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption)) && !isFn)
+		return NO;
+	id editTarget = [self findFieldIsEditing] ? self.window.firstResponder : self;
 	for (NSMenu *m in _inWindowMenus) {
 		if (NPInvokeMatchingItem(m, event, editTarget)) return YES;
 	}
@@ -790,7 +844,7 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 		_document.currentEncoding ?: @"UTF-8",
 		_document.currentLexer ? @"lexer" : @"text"];
 	NSAlert *a = [[NSAlert alloc] init];
-	a.messageText = @"Properties";
+	a.messageText = NPL(@"Properties");
 	a.informativeText = info;
 	[a runModal];
 }
@@ -966,11 +1020,11 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 - (void)searchFindPrev { [_findPanel findPrevious:_document]; [self refreshStatus]; }
 - (void)gotoLine {
 	NSAlert *a = [[NSAlert alloc] init];
-	a.messageText = @"Goto Line";
+	a.messageText = NPL(@"Goto Line");
 	NSTextField *input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
 	a.accessoryView = input;
-	[a addButtonWithTitle:@"Goto"];
-	[a addButtonWithTitle:@"Cancel"];
+	[a addButtonWithTitle:NPL(@"Goto")];
+	[a addButtonWithTitle:NPL(@"Cancel")];
 	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
 		if (r != NSAlertFirstButtonReturn) return;
 		long line = input.stringValue.longLongValue;
@@ -1047,11 +1101,28 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 - (void)toggleFullScreen { [self.window toggleFullScreen:nil]; }
 - (void)toggleStatusBar {
 	_statusBar.hidden = !_statusBar.hidden;
+	_statusBarHeight.constant = _statusBar.hidden ? 0 : 22;
 }
 
 #pragma mark - Scheme
 
-- (void)schemeChoose { [self.window makeFirstResponder:_lexPopup]; }
+- (void)schemeChoose {
+	NSAlert *a = [[NSAlert alloc] init];
+	a.messageText = NPL(@"Syntax Scheme...");
+	NSPopUpButton *pop = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 300, 26) pullsDown:NO];
+	for (NSDictionary *info in [LexerRegistry allLexersInfo]) {
+		NSMenuItem *it = [[NSMenuItem alloc] initWithTitle:info[@"name"] ?: @"" action:nil keyEquivalent:@""];
+		it.representedObject = info;
+		[pop.menu addItem:it];
+	}
+	a.accessoryView = pop;
+	[a addButtonWithTitle:NPL(@"OK")];
+	[a addButtonWithTitle:NPL(@"Cancel")];
+	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSAlertFirstButtonReturn) return;
+		[self schemeChanged:pop];
+	}];
+}
 - (void)schemeReset {
 	if (_document.fileURL) {
 		[_document applyLexerForExtension:_document.fileURL.pathExtension.lowercaseString];
@@ -1212,7 +1283,7 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 	NSPasteboard *pb = [NSPasteboard generalPasteboard];
 	[pb clearContents];
 	[pb setString:text forType:NSPasteboardTypeString];
-	if (rtf) [pb setData:rtf forType:NSRTFPboardType];
+	if (rtf) [pb setData:rtf forType:NSPasteboardTypeRTF];
 }
 - (void)editDuplicate { [_document.editor message:SCI_SELECTIONDUPLICATE wParam:0 lParam:0]; }
 - (void)editRemoveBlankLines {
@@ -1318,7 +1389,9 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 - (void)searchSelectWord {
 	ScintillaView *e = _document.editor;
 	const sptr_t pos = [e message:SCI_GETCURRENTPOS];
-	[e message:SCI_SETSEL wParam:[e message:SCI_WORDSTARTPOSITION wParam:pos lParam:1] lParam:[e message:SCI_WORDENDPOSITION wParam:pos lParam:1]];
+	[e message:SCI_SETSEL
+		wParam:[e message:SCI_WORDSTARTPOSITION wParam:pos lParam:0]
+		lParam:[e message:SCI_WORDENDPOSITION wParam:pos lParam:0]];
 }
 - (void)viewLongLineMarker {
 	ScintillaView *e = _document.editor;
@@ -1385,8 +1458,72 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 	NSAlert *a = [[NSAlert alloc] init]; a.messageText = NPL(@"Settings saved"); [a addButtonWithTitle:NPL(@"OK")];
 	[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {}];
 }
-- (void)toggleMenuBar { _menuBar.hidden = !_menuBar.hidden; }
-- (void)toggleToolbar { _toolBar.hidden = !_toolBar.hidden; }
+- (void)toggleMenuBar {
+	_menuBar.hidden = !_menuBar.hidden;
+	_menuBarHeight.constant = _menuBar.hidden ? 0 : 22;
+}
+- (void)toggleToolbar {
+	_toolBar.hidden = !_toolBar.hidden;
+	_toolBarHeight.constant = _toolBar.hidden ? 0 : 26;
+}
+- (void)addCurrentToFavorites {
+	NSString *path = _document.fileURL.path;
+	if (!path.length) return;
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	NSMutableArray *list = [([d arrayForKey:@"NP4Favorites"] ?: @[]) mutableCopy];
+	[list removeObject:path];
+	[list insertObject:path atIndex:0];
+	if (list.count > 30) [list removeObjectsInRange:NSMakeRange(30, list.count - 30)];
+	[d setObject:list forKey:@"NP4Favorites"];
+}
+- (void)openFavorite:(NSMenuItem *)item {
+	NSURL *url = [NSURL fileURLWithPath:item.representedObject];
+	EditorDocument *doc = [[EditorDocument alloc] initWithFileURL:url contents:@""];
+	if ([doc loadFromURL:url error:nil]) {
+		self.editorDocument = doc;
+		[self swapEditor];
+		[self noteRecentFile:url];
+	}
+}
+- (void)tbOpenFav {
+	if (!self.window.isKeyWindow) return;
+	NSMenu *m = [[NSMenu alloc] init];
+	NSMenuItem *add = [m addItemWithTitle:NPL(@"Add to Favorites") action:@selector(addCurrentToFavorites) keyEquivalent:@""];
+	add.target = self;
+	add.enabled = _document.fileURL != nil;
+	[m addItem:[NSMenuItem separatorItem]];
+	NSArray *list = [[NSUserDefaults standardUserDefaults] arrayForKey:@"NP4Favorites"] ?: @[];
+	if (!list.count) {
+		NSMenuItem *empty = [m addItemWithTitle:NPL(@"No favorites") action:nil keyEquivalent:@""];
+		empty.enabled = NO;
+	} else {
+		for (NSString *path in list) {
+			NSMenuItem *it = [m addItemWithTitle:path.lastPathComponent action:@selector(openFavorite:) keyEquivalent:@""];
+			it.target = self;
+			it.representedObject = path;
+			it.toolTip = path;
+		}
+	}
+	NSEvent *ev = [NSApp currentEvent];
+	if (ev) [NSMenu popUpContextMenu:m withEvent:ev forView:self.window.contentView];
+}
+- (void)tbBrowse { [self openContainingFolder]; }
+- (void)tbOpenDropdown { [self fileOpen]; }
+- (void)tbFoldDropdown { [self viewCodeFolding]; }
+- (void)tbSchemeMenu { [self schemeChoose]; }
+- (void)tbSchemeConfig { [self schemeChoose]; }
+- (void)terminate { [NSApp terminate:nil]; }
+- (BOOL)validateMenuItem:(NSMenuItem *)item {
+	const SEL a = item.action;
+	if (a == @selector(fileRevert) || a == @selector(openContainingFolder)
+		|| a == @selector(fileSaveBackup) || a == @selector(fileProperties))
+		return _document.fileURL != nil;
+	if (a == @selector(undo:) || a == @selector(editUndo))
+		return [_document.editor message:SCI_CANUNDO] != 0;
+	if (a == @selector(redo:) || a == @selector(editRedo))
+		return [_document.editor message:SCI_CANREDO] != 0;
+	return YES;
+}
 - (void)toolsExecute {
 	NSURL *url = _document.fileURL;
 	if (!url) {
@@ -1507,11 +1644,11 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 - (BOOL)windowShouldClose:(NSWindow *)sender {
 	if (_document.dirty) {
 		NSAlert *a = [[NSAlert alloc] init];
-		a.messageText = @"Save changes?";
-		a.informativeText = @"The document has unsaved changes.";
-		[a addButtonWithTitle:@"Save"];
-		[a addButtonWithTitle:@"Don't Save"];
-		[a addButtonWithTitle:@"Cancel"];
+		a.messageText = NPL(@"Save changes?");
+		a.informativeText = NPL(@"The document has unsaved changes.");
+		[a addButtonWithTitle:NPL(@"Save")];
+		[a addButtonWithTitle:NPL(@"Don't Save")];
+		[a addButtonWithTitle:NPL(@"Cancel")];
 		[a beginSheetModalForWindow:sender completionHandler:^(NSModalResponse r) {
 			if (r == NSAlertFirstButtonReturn) { if ([self fileSave]) [sender performClose:nil]; }
 			else if (r == NSAlertSecondButtonReturn) [sender performClose:nil];
