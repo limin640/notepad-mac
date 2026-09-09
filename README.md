@@ -15,8 +15,8 @@
   `词法器名` │ `编码` │ `CR+LF` │ `INS` │ `100%` │ `大小`（对照 `IDS_STATUSITEM_FORMAT`）
 - **编辑区**：行号栏（`#2B91AF`）、折叠栏（方框 +/-，`#8080FF`/`#ADD8E6`）、当前行 outline 框、
   自动折叠 + 省略号（Boxed），TAB=4，光标 1px 线
-- **主题**：Scheme → Style Theme → `Default`（亮）/ `Dark`（暗，颜色取自 `Notepad4 DarkTheme.ini`，
-  默认暗色以对齐官方截图）。窗口 chrome 恒为浅色（与 Windows 版一致）
+- **主题**：Scheme → Style Theme → `Default`（亮）/ `Dark`（暗，颜色取自 `Notepad4 DarkTheme.ini`）。
+  启动时跟随 macOS 系统外观（暗色系统 → 暗色编辑区 + 暗色工具栏/状态栏；亮色系统 → 全浅色）
 - 单文档（Notepad4 本身无标签页）
 
 ## 功能
@@ -36,6 +36,7 @@
 | 查看 | ✅ 自动换行/行号/空白字符/换行符/缩进线/缩放/状态栏 |
 | 跳转到行/括号匹配 | ✅ |
 | 打印 | ✅ |
+| 跟随系统明暗外观 | ✅ 工具栏/状态栏/编辑区同色系切换 |
 
 ## 构建
 

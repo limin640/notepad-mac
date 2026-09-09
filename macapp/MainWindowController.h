@@ -4,7 +4,7 @@
 
 @interface MainWindowController : NSWindowController <NSWindowDelegate>
 
-@property (nonatomic, strong, readonly) EditorDocument *document;
+@property (nonatomic, strong) EditorDocument *editorDocument;
 
 - (void)refreshStatus;
 - (void)updateWindowTitle;

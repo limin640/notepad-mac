@@ -129,6 +129,10 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	NPApplyTheme(_editor, _theme, nullptr);
 	[self updateLineNumberWidth];
 
+	// 初始状态未修改（新建空文档不该显示为已修改）
+	[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+	_dirty = NO;
+
 	_editor.delegate = self;
 }
 

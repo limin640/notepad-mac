@@ -6,6 +6,25 @@
 #import "LexerRegistry.h"
 #import "Scintilla.h"
 
+// 跟随系统明暗外观的 chrome 背景
+@interface NPChromeView : NSView
+@property (nonatomic) BOOL borderAtBottom;   // 工具栏底部描边
+@property (nonatomic) BOOL borderAtTop;      // 状态栏顶部描边
+@end
+@implementation NPChromeView
+- (void)drawRect:(NSRect)dirtyRect {
+	[[NSColor windowBackgroundColor] setFill];
+	NSRectFill(dirtyRect);
+	[[NSColor separatorColor] setFill];
+	if (self.borderAtBottom) {
+		NSRectFill(NSMakeRect(0, 0, self.bounds.size.width, 1));
+	}
+	if (self.borderAtTop) {
+		NSRectFill(NSMakeRect(0, self.bounds.size.height - 1, self.bounds.size.width, 1));
+	}
+}
+@end
+
 @implementation MainWindowController {
 	FindReplacePanel *_findPanel;
 	NSView *_editorHost;
@@ -17,7 +36,7 @@
 	NSMenuItem *_themeDefaultItem;
 	NSMenuItem *_themeDarkItem;
 }
-@dynamic document;
+@dynamic editorDocument;
 
 - (instancetype)init {
 	NSWindow *win = [[NSWindow alloc]
@@ -27,9 +46,7 @@
 		backing:NSBackingStoreBuffered defer:NO];
 	win.title = @"Untitled - Notepad4";
 	win.minSize = NSMakeSize(400, 280);
-	// Windows 版 Notepad4：chrome（标题栏/工具栏/菜单/状态栏）恒为浅色，
-	// 只有编辑区随 Style Theme 变暗（对照 v24.07HD 截图）
-	win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+	// chrome 跟随系统外观（暗色系统 → 暗色工具栏/状态栏）
 	self = [super initWithWindow:win];
 	if (self) {
 		win.delegate = self;
@@ -51,9 +68,8 @@
 	win.contentView = root;
 
 	// ---- 工具栏：原版位图图标 + DefaultToolbarButtons 顺序 ----
-	NSView *bar = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 900, 30)];
-	bar.wantsLayer = YES;
-	bar.layer.backgroundColor = [NSColor colorWithSRGBRed:0xF0/255.0 green:0xF0/255.0 blue:0xF0/255.0 alpha:1].CGColor;
+	NPChromeView *bar = [[NPChromeView alloc] initWithFrame:NSMakeRect(0, 0, 900, 26)];
+	bar.borderAtBottom = YES;
 	bar.translatesAutoresizingMaskIntoConstraints = NO;
 	[root addSubview:bar];
 
@@ -105,18 +121,18 @@
 			sep.layer.backgroundColor = [NSColor separatorColor].CGColor;
 			sep.translatesAutoresizingMaskIntoConstraints = NO;
 			[sep.widthAnchor constraintEqualToConstant:1].active = YES;
-			[sep.heightAnchor constraintEqualToConstant:20].active = YES;
+			[sep.heightAnchor constraintEqualToConstant:16].active = YES;
 			v = sep;
 		} else {
-			NSString *name = [NSString stringWithFormat:@"tb%02d", e.icon];
+			NSString *name = [NSString stringWithFormat:@"tb16_%02d", e.icon];
 			NSString *path = [[NSBundle mainBundle] pathForResource:name ofType:@"png"];
 			NSImage *img = path ? [[NSImage alloc] initWithContentsOfFile:path] : nil;
 			NSButton *b = [NSButton buttonWithImage:img ?: [NSImage new] target:self action:e.act];
 			b.bordered = NO;
 			b.imageScaling = NSImageScaleNone;
 			b.translatesAutoresizingMaskIntoConstraints = NO;
-			[b.widthAnchor constraintEqualToConstant:26].active = YES;
-			[b.heightAnchor constraintEqualToConstant:26].active = YES;
+			[b.widthAnchor constraintEqualToConstant:22].active = YES;
+			[b.heightAnchor constraintEqualToConstant:22].active = YES;
 			if (e.dropdown) {
 				// 右下角小三角（Win32 BTNS_DROPDOWN 外观）
 				NSImageView *arrow = [[NSImageView alloc] initWithFrame:NSZeroRect];
@@ -126,14 +142,14 @@
 				[b addSubview:arrow];
 				[arrow.trailingAnchor constraintEqualToAnchor:b.trailingAnchor constant:-1].active = YES;
 				[arrow.bottomAnchor constraintEqualToAnchor:b.bottomAnchor constant:-1].active = YES;
-				[arrow.widthAnchor constraintEqualToConstant:7].active = YES;
-				[arrow.heightAnchor constraintEqualToConstant:7].active = YES;
+				[arrow.widthAnchor constraintEqualToConstant:6].active = YES;
+				[arrow.heightAnchor constraintEqualToConstant:6].active = YES;
 			}
 			v = b;
 		}
 		[bar addSubview:v];
 		if (!prev) {
-			[bar.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:3].active = YES;
+			[v.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor constant:3].active = YES;
 		} else if (e.icon < 0) {
 			[prev.trailingAnchor constraintEqualToAnchor:v.leadingAnchor constant:3].active = YES;
 		} else {
@@ -164,7 +180,7 @@
 	[root.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor].active = YES;
 	[root.topAnchor constraintEqualToAnchor:bar.topAnchor].active = YES;
-	[bar.heightAnchor constraintEqualToConstant:30].active = YES;
+	[bar.heightAnchor constraintEqualToConstant:26].active = YES;
 
 	[root.leadingAnchor constraintEqualToAnchor:_editorHost.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:_editorHost.trailingAnchor].active = YES;
@@ -451,10 +467,10 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	NSApp.mainMenu = mb;
 }
 
-- (EditorDocument *)document {
+- (EditorDocument *)editorDocument {
 	return _document;
 }
-- (void)setDocument:(EditorDocument *)doc {
+- (void)setEditorDocument:(EditorDocument *)doc {
 	_document = doc;
 }
 
@@ -486,7 +502,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 #pragma mark - File
 
 - (void)fileNew {
-	self.document = [[EditorDocument alloc] initWithNewUntitled:1];
+	self.editorDocument = [[EditorDocument alloc] initWithNewUntitled:1];
 	[self swapEditor];
 }
 - (void)fileNewWindow {
@@ -500,7 +516,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 		EditorDocument *doc = [[EditorDocument alloc] initWithFileURL:panel.URL contents:@""];
 		NSError *err = nil;
 		if ([doc loadFromURL:panel.URL error:&err]) {
-			self.document = doc;
+			self.editorDocument = doc;
 			[self swapEditor];
 		}
 	}];
@@ -532,8 +548,8 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
 		if (r != NSModalResponseOK) return;
 		NSError *err = nil;
-		if ([self.document saveToURL:panel.URL error:&err]) {
-			[self.document applyLexerForExtension:panel.URL.pathExtension.lowercaseString];
+		if ([self.editorDocument saveToURL:panel.URL error:&err]) {
+			[self.editorDocument applyLexerForExtension:panel.URL.pathExtension.lowercaseString];
 			[self updateWindowTitle];
 			[self refreshStatus];
 		}
@@ -663,7 +679,7 @@ static void MSep(NSMenu *m) { [m addItem:[NSMenuItem separatorItem]]; }
 		if (r != NSAlertFirstButtonReturn) return;
 		long line = input.stringValue.longLongValue;
 		if (line > 0) {
-			[self.document.editor message:SCI_GOTOLINE wParam:line - 1 lParam:0];
+			[self.editorDocument.editor message:SCI_GOTOLINE wParam:line - 1 lParam:0];
 			[self refreshStatus];
 		}
 	}];

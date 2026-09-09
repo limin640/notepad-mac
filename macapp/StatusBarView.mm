@@ -30,11 +30,18 @@ static NSString *WStr2(const wchar_t *ws) {
 
 @implementation StatusBarView
 
+- (void)drawRect:(NSRect)dirtyRect {
+	[[NSColor windowBackgroundColor] setFill];
+	NSRectFill(dirtyRect);
+	// 顶部 1px 描边（Windows 状态栏上沿）
+	[[NSColor separatorColor] setFill];
+	NSRectFill(NSMakeRect(0, self.bounds.size.height - 1, self.bounds.size.width, 1));
+}
+
 - (instancetype)initWithFrame:(NSRect)frame {
 	self = [super initWithFrame:frame];
 	if (self) {
 		self.wantsLayer = YES;
-		self.layer.backgroundColor = [NSColor colorWithSRGBRed:0xF0/255.0 green:0xF0/255.0 blue:0xF0/255.0 alpha:1].CGColor;
 		_cells = [NSMutableArray array];
 
 		// 12 格：6 位置 + 词法器 + 编码 + EOL + INS + 缩放 + 大小
