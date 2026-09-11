@@ -3,6 +3,7 @@
 #import "EditorDocument.h"
 #import "ScintillaView.h"
 #import "Scintilla.h"
+#include <cstring>
 
 @interface FindReplacePanel () <NSSearchFieldDelegate, NSTextFieldDelegate>
 @end
@@ -72,8 +73,8 @@
 	self.replaceField.translatesAutoresizingMaskIntoConstraints = NO;
 	[self.replaceField.widthAnchor constraintEqualToConstant:320].active = YES;
 
-	NSButton *repOne = [NSButton buttonWithTitle:NPL(@"Replace") target:self action:@selector(replaceOne:)];
-	NSButton *repAll = [NSButton buttonWithTitle:NPL(@"Replace All") target:self action:@selector(replaceAll:)];
+	NSButton *repOne = [NSButton buttonWithTitle:NPL(@"Replace") target:self action:@selector(clickReplaceOne:)];
+	NSButton *repAll = [NSButton buttonWithTitle:NPL(@"Replace All") target:self action:@selector(clickReplaceAll:)];
 	self.replaceRow = [NSStackView stackViewWithViews:@[self.replaceField, repOne, repAll]];
 	self.replaceRow.spacing = 8;
 
@@ -141,51 +142,71 @@
 	}
 }
 
+- (EditorDocument *)hostDocument {
+	id wc = self.hostWindow.windowController;
+	if ([wc respondsToSelector:@selector(editorDocument)])
+		return [wc performSelector:@selector(editorDocument)];
+	return nil;
+}
+
 - (void)next:(id)sender {
-	[self.hostWindow.windowController tryToPerform:@selector(findNextNext:) with:sender];
+	EditorDocument *doc = [self hostDocument];
+	if (doc) [self findNext:doc];
 }
 
 - (void)prev:(id)sender {
-	[self.hostWindow.windowController tryToPerform:@selector(findNextPrev:) with:sender];
+	EditorDocument *doc = [self hostDocument];
+	if (doc) [self findPrevious:doc];
+}
+
+- (void)clickReplaceOne:(id)sender {
+	EditorDocument *doc = [self hostDocument];
+	if (doc) [self replaceOne:doc];
+}
+
+- (void)clickReplaceAll:(id)sender {
+	EditorDocument *doc = [self hostDocument];
+	if (doc) [self replaceAll:doc];
 }
 
 - (void)replaceOne:(EditorDocument *)doc {
 	NSString *find = self.findField.stringValue;
-	NSString *repl = self.replaceField.stringValue;
-	if (!find.length) return;
-	// 覆盖当前选区（已是命中区）再找下一个
+	NSString *repl = self.replaceField.stringValue ?: @"";
+	if (!find.length || !doc) return;
 	[doc.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)repl.UTF8String];
 	[self findInDoc:doc backwards:NO];
 }
 
 - (void)replaceAll:(EditorDocument *)doc {
 	NSString *find = self.findField.stringValue;
-	NSString *repl = self.replaceField.stringValue;
-	if (!find.length) return;
+	NSString *repl = self.replaceField.stringValue ?: @"";
+	if (!find.length || !doc) return;
 	const int flags = [self searchFlags];
-	[doc.editor message:SCI_TARGETFROMSELECTION wParam:0 lParam:0];
-	// 循环替换整个文档：从头 target
-	[doc.editor message:SCI_SETSEARCHFLAGS wParam:flags lParam:0];
-	[doc.editor message:SCI_SETTARGETSTART wParam:0 lParam:0];
-	[doc.editor message:SCI_SETTARGETEND wParam:(sptr_t)[doc.editor message:SCI_GETLENGTH] lParam:0];
-	long total = 0;
-	sptr_t pos = 0;
 	const char *findC = find.UTF8String;
 	const char *replC = repl.UTF8String;
-	while (pos >= 0) {
+	const sptr_t findN = (sptr_t)strlen(findC);
+	const sptr_t replN = (sptr_t)strlen(replC);
+	[doc.editor message:SCI_SETSEARCHFLAGS wParam:flags lParam:0];
+	long total = 0;
+	sptr_t pos = 0;
+	while (1) {
 		[doc.editor message:SCI_SETTARGETSTART wParam:pos lParam:0];
 		[doc.editor message:SCI_SETTARGETEND wParam:(sptr_t)[doc.editor message:SCI_GETLENGTH] lParam:0];
-		const sptr_t found = [doc.editor message:SCI_SEARCHINTARGET wParam:find.length lParam:(sptr_t)findC];
+		const sptr_t found = [doc.editor message:SCI_SEARCHINTARGET wParam:findN lParam:(sptr_t)findC];
 		if (found < 0) break;
-		[doc.editor message:SCI_REPLACETARGET wParam:(repl.length ? strlen(replC) : 0) lParam:(sptr_t)replC];
+		[doc.editor message:SCI_REPLACETARGET wParam:replN lParam:(sptr_t)replC];
 		total++;
-		pos = [doc.editor message:SCI_GETTARGETEND wParam:0 lParam:0];
+		pos = [doc.editor message:SCI_GETTARGETEND];
 		if (pos >= (sptr_t)[doc.editor message:SCI_GETLENGTH]) break;
 	}
-	// 汇报
+	if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--headless"]) return;
 	NSAlert *a = [[NSAlert alloc] init];
 	a.messageText = total ? [NSString stringWithFormat:NPL(@"Replaced %ld occurrences"), total] : NPL(@"No matches found");
-	[a runModal];
+	[a addButtonWithTitle:NPL(@"OK")];
+	if (self.hostWindow)
+		[a beginSheetModalForWindow:self.hostWindow completionHandler:^(NSModalResponse r) {}];
+	else
+		[a runModal];
 }
 
 - (void)findInDoc:(EditorDocument *)doc backwards:(BOOL)backwards {
@@ -203,7 +224,9 @@
 	[e message:SCI_SETSEARCHFLAGS wParam:flags lParam:0];
 	[e message:SCI_SETTARGETSTART wParam:start lParam:0];
 	[e message:SCI_SETTARGETEND wParam:end lParam:0];
-	const sptr_t found = [e message:SCI_SEARCHINTARGET wParam:find.length lParam:(sptr_t)find.UTF8String];
+	const char *findC = find.UTF8String;
+	const sptr_t findN = (sptr_t)strlen(findC);
+	const sptr_t found = [e message:SCI_SEARCHINTARGET wParam:findN lParam:(sptr_t)findC];
 	if (found >= 0) {
 		const sptr_t fEnd = [e message:SCI_GETTARGETEND];
 		[e message:SCI_SETSELECTION wParam:found lParam:fEnd];
@@ -212,7 +235,7 @@
 		// wrap 到头重找
 		[e message:SCI_SETTARGETSTART wParam:0 lParam:0];
 		[e message:SCI_SETTARGETEND wParam:len lParam:0];
-		const sptr_t f2 = [e message:SCI_SEARCHINTARGET wParam:find.length lParam:(sptr_t)find.UTF8String];
+		const sptr_t f2 = [e message:SCI_SEARCHINTARGET wParam:findN lParam:(sptr_t)findC];
 		if (f2 >= 0) {
 			const sptr_t f2e = [e message:SCI_GETTARGETEND];
 			[e message:SCI_SETSELECTION wParam:f2 lParam:f2e];

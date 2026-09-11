@@ -1,0 +1,223 @@
+Notepad4-mac 许可说明
+====================
+
+本仓库包含两类代码，许可不同。请整份阅读，不要只看一句摘要。
+
+1. 本移植的原创部分（个人可用，商业需授权）
+------------------------------------------
+
+下列内容由本仓库作者编写，采用 PolyForm Noncommercial License 1.0.0
+（全文见下方）：
+
+  - macapp/ 下的 Objective-C++ 源码（.h / .mm）
+  - CMakeLists.txt、build.sh、scripts/、tests/
+  - 本仓库新增的文档（README.md、docs/ 等）
+
+允许：个人学习、自用、非商业分发与修改。
+
+不允许（除非另行取得书面授权）：把上述原创代码或基于它的
+Notepad4-mac 应用用于商业产品、收费分发、商业服务或其它商业目的。
+
+商业授权请通过 GitHub Issues 联系：
+https://github.com/limin640/notepad4-mac/issues
+
+
+2. 上游代码（必须保留原许可，不能改成「禁止商业」）
+----------------------------------------------
+
+Notepad4、Scintilla、Boost.Regex 本身就是宽松开源许可，允许商业使用。
+本仓库不能、也不会收回这些权利。你仍可按原许可单独使用这些文件。
+
+  - lexers_def/、工具栏图标、Notepad4.icns、Notepad4 DarkTheme.ini
+    来自 zufuliu/notepad4，BSD 3-Clause。
+    完整条款见上游 License.txt，以及本文件「BSD 3-Clause」一节。
+
+  - scintilla_upstream/（除 Boost 头文件）
+    Lexilla / Scintilla / SciTE 历史许可，见 scintilla_upstream/License.txt。
+
+  - scintilla_upstream/include/boost/
+    Boost Software License 1.0，见该目录 LICENSE_1_0.txt。
+
+
+3. 组合应用怎么理解
+------------------
+
+下载、编译、自己用 Notepad4-mac：可以，免费。
+
+把 Notepad4-mac 这个 macOS 应用拿去卖、预装、或作为商业产品一部分：
+需要就第 1 部分取得授权。仅使用第 2 部分的上游文件，仍按上游许可。
+
+
+================================================================
+PolyForm Noncommercial License 1.0.0
+https://polyformproject.org/licenses/noncommercial/1.0.0
+适用于上文第 1 部分。
+================================================================
+
+## Acceptance
+
+In order to get any license under these terms, you must agree
+to them as both strict obligations and conditions to all
+your licenses.
+
+## Copyright License
+
+The licensor grants you a copyright license for the
+software to do everything you might do with the software
+that would otherwise infringe the licensor's copyright
+in it for any permitted purpose.  However, you may
+only distribute the software according to [Distribution
+License](#distribution-license) and make changes or new works
+based on the software according to [Changes and New Works
+License](#changes-and-new-works-license).
+
+## Distribution License
+
+The licensor grants you an additional copyright license
+to distribute copies of the software.  Your license
+to distribute covers distributing the software with
+changes and new works permitted by [Changes and New Works
+License](#changes-and-new-works-license).
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of
+the software from you also gets a copy of these terms or the
+URL for them above, as well as copies of any plain-text notices
+of other licensors' property rights.  You may not modify
+notices attached to the software by licensors for this
+purpose.
+
+## Changes and New Works License
+
+The licensor grants you an additional copyright license to
+make changes and new works based on the software for any
+permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that
+covers patent claims the licensor can license, or becomes able
+to license, that you would infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for
+the benefit of public knowledge, personal study, private
+entertainment, hobby projects, amateur pursuits, or religious
+observance, without any anticipated commercial application,
+is use for a noncommercial purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution,
+public research organization, public safety or health
+organization, environmental protection organization,
+or government institution is use for a noncommercial
+purpose, regardless of the source of funding or obligations
+resulting from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the
+law. These terms do not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of
+your licenses to anyone else, or prevent the licensor from
+granting licenses to anyone else.  These terms do not imply
+any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or
+contributes to infringement of any patent, your patent license
+for the software granted under these terms ends immediately. If
+your company makes such a claim, your patent license ends
+immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have
+violated any of these terms, or done anything with the software
+not covered by your licenses, your licenses can nonetheless
+continue if you come into full compliance within 30 days of
+receiving notice.  Any notice of violation need only identify
+the violation in general terms.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without
+any warranty or condition, and the licensor will not be liable
+to you for any damages arising out of these terms or the use
+or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these
+terms, and the **software** is the software the licensor makes
+available under these terms.
+
+**You** refers to the individual or entity agreeing to these
+terms.
+
+**Your company** is any legal entity, sole proprietorship,
+or other kind of organization that you work for, plus all
+organizations that have control over, are under the control of,
+or are under common control with that organization.  **Control**
+means ownership of substantially all the assets of an entity,
+or the power to direct its management and policies by vote,
+contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the
+software under these terms.
+
+**Use** means anything you do with the software requiring one
+of your licenses.
+
+
+================================================================
+BSD 3-Clause License（Notepad4 / Notepad2 等上游）
+================================================================
+
+Notepad4, matepath, Notepad2, metapath and Notepad2-mod are
+licensed under the BSD 3-Clause License.
+
+Notepad4 Copyright © 2011-2026 Zufu Liu and All contributors.
+matepath Copyright © 2011-2026 Zufu Liu and All contributors.
+Notepad2-mod Copyright © 2010-2017 XhmikosR and All contributors.
+Notepad2 Copyright © 2004-2012 Florian Balmer.
+metapath Copyright © 1996-2012 Florian Balmer.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+3. Neither the name of Florian Balmer nor the names of its contributors
+may be used to endorse or promote products derived from this software
+without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

@@ -7,6 +7,9 @@
 
 - (void)applyLanguage;   // 切换界面语言后重建文本
 - (void)updateForDocument:(nullable EditorDocument *)doc;
+- (void)setPreviewTarget:(id)target;
+- (void)setPreviewActive:(BOOL)on;
+- (NSButton *)previewButton;
 
 @property (nonatomic, readonly) NSTextField *posField;      // 行,列 (字符,选择)
 @property (nonatomic, readonly) NSTextField *lexerField;    // 词法器名

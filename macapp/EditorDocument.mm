@@ -1,5 +1,6 @@
 #import "EditorDocument.h"
 #import "SciLexer.h"
+#import "Scintilla.h"
 #import "ILexer.h"
 #import "LexerModule.h"
 #import "LexerPalettes.h"
@@ -16,51 +17,132 @@
 // 旧 ext->SCLEX 兜底映射已由 LexerRegistry（90 词法器全量）替代
 
 
-static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) {
-	// BOM 检测
-	if (data.length >= 3) {
-		const UInt8 *b = static_cast<const UInt8 *>(data.bytes);
-		if (b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) {
-			*usedEncoding = @"UTF-8";
-			return [[NSString alloc] initWithData:[data subdataWithRange:NSMakeRange(3, data.length - 3)]
-				encoding:NSUTF8StringEncoding];
-		}
-		if (b[0] == 0xFF && b[1] == 0xFE) {
-			*usedEncoding = @"UTF-16LE";
-			return [[NSString alloc] initWithData:[data subdataWithRange:NSMakeRange(2, data.length - 2)]
-				encoding:NSUTF16LittleEndianStringEncoding];
-		}
-		if (b[0] == 0xFE && b[1] == 0xFF) {
-			*usedEncoding = @"UTF-16BE";
-			return [[NSString alloc] initWithData:[data subdataWithRange:NSMakeRange(2, data.length - 2)]
-				encoding:NSUTF16BigEndianStringEncoding];
-		}
-	}
-	// 无 BOM：先按 UTF-8 严格试
-	NSString *s = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-	if (s) {
-		*usedEncoding = @"UTF-8";
-		return s;
-	}
-	// 回退 GB18030（中文环境最常见 ANSI）
-	s = [[NSString alloc] initWithData:data encoding:CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000)];
-	if (s) {
-		*usedEncoding = @"GB18030";
-		return s;
-	}
-	// 最后 Latin1（永不失败）
-	*usedEncoding = @"Latin-1";
-	return [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+static BOOL NPPrefBool(NSString *key, BOOL fallback) {
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	return [d objectForKey:key] ? [d boolForKey:key] : fallback;
 }
+static NSInteger NPPrefInt(NSString *key, NSInteger fallback) {
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	return [d objectForKey:key] ? [d integerForKey:key] : fallback;
+}
+
+// 对照 Windows EditLoadFile / EditSetNewText：
+// UTF-8 不经 NSString（避免整文件 UTF-16 往返）；SCI_APPENDTEXT + 预分配；大文件跳过全文着色。
+static const NSUInteger kNP4ColouriseAllLimit = 256ull * 1024ull;
+static const NSUInteger kNP4LargeFileBytes = 8ull * 1024ull * 1024ull;
+static const NSUInteger kNP4KeepRawBytesLimit = 1024ull * 1024ull;
+
+static BOOL NPIsUTF8(const UInt8 *s, size_t n) {
+	size_t i = 0;
+	while (i < n) {
+		const UInt8 c = s[i];
+		if (c < 0x80) { i++; continue; }
+		size_t need = 0;
+		if ((c & 0xE0) == 0xC0) need = 2;
+		else if ((c & 0xF0) == 0xE0) need = 3;
+		else if ((c & 0xF8) == 0xF0) need = 4;
+		else return NO;
+		if (i + need > n) return NO;
+		for (size_t j = 1; j < need; j++) {
+			if ((s[i + j] & 0xC0) != 0x80) return NO;
+		}
+		i += need;
+	}
+	return YES;
+}
+
+static NSUInteger NPCountLines(const char *s, NSUInteger n) {
+	NSUInteger lines = 1;
+	for (NSUInteger i = 0; i < n; i++) {
+		if (s[i] == '\n') lines++;
+	}
+	return lines;
+}
+
+static NSData *NPRecodeToUTF8(NSData *src, NSStringEncoding enc, NSUInteger skip) {
+	if (src == nil) return nil;
+	if (skip > src.length) return nil;
+	NSData *slice = (skip == 0) ? src : [src subdataWithRange:NSMakeRange(skip, src.length - skip)];
+	NSString *s = [[NSString alloc] initWithData:slice encoding:enc];
+	if (s == nil) return nil;
+	return [s dataUsingEncoding:NSUTF8StringEncoding];
+}
+
+typedef struct {
+	NSData *keepAlive;
+	const char *bytes;
+	NSUInteger length;
+	NSString *encoding;
+} NPLoadBuf;
+
+static NPLoadBuf NPPrepareUTF8Load(NSData *data) {
+	NPLoadBuf r;
+	r.keepAlive = data;
+	r.bytes = "";
+	r.length = 0;
+	r.encoding = @"UTF-8";
+	if (data == nil || data.length == 0) return r;
+	const UInt8 *b = static_cast<const UInt8 *>(data.bytes);
+	const NSUInteger n = data.length;
+	if (n >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) {
+		r.bytes = reinterpret_cast<const char *>(b + 3);
+		r.length = n - 3;
+		r.encoding = @"UTF-8 BOM";
+		return r;
+	}
+	if (n >= 2 && b[0] == 0xFF && b[1] == 0xFE) {
+		NSData *c = NPRecodeToUTF8(data, NSUTF16LittleEndianStringEncoding, 2);
+		r.keepAlive = c ?: data;
+		r.encoding = @"UTF-16LE";
+		r.bytes = c ? static_cast<const char *>(c.bytes) : "";
+		r.length = c ? c.length : 0;
+		return r;
+	}
+	if (n >= 2 && b[0] == 0xFE && b[1] == 0xFF) {
+		NSData *c = NPRecodeToUTF8(data, NSUTF16BigEndianStringEncoding, 2);
+		r.keepAlive = c ?: data;
+		r.encoding = @"UTF-16BE";
+		r.bytes = c ? static_cast<const char *>(c.bytes) : "";
+		r.length = c ? c.length : 0;
+		return r;
+	}
+	if (NPIsUTF8(b, n)) {
+		r.bytes = reinterpret_cast<const char *>(b);
+		r.length = n;
+		return r;
+	}
+	NSData *gb = NPRecodeToUTF8(data, CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000), 0);
+	if (gb) {
+		r.keepAlive = gb;
+		r.encoding = @"GB18030";
+		r.bytes = static_cast<const char *>(gb.bytes);
+		r.length = gb.length;
+		return r;
+	}
+	NSData *lat = NPRecodeToUTF8(data, NSISOLatin1StringEncoding, 0);
+	r.keepAlive = lat ?: data;
+	r.encoding = @"Latin-1";
+	r.bytes = lat ? static_cast<const char *>(lat.bytes) : "";
+	r.length = lat ? lat.length : 0;
+	return r;
+}
+
+@interface EditorDocument (FastLoad)
+- (void)applyUTF8Bytes:(const char *)bytes length:(NSUInteger)len;
+@end
 
 @implementation EditorDocument {
 	NSString *_usedEncoding;
 	BOOL _dirty;
+	BOOL _braceMatchOn;
+	BOOL _urlDetectOn;
+	BOOL _largeFileMode;
 	NSData *_rawBytes; // 打开时的原始字节（供重解码）
 	NSArray<NSString *> *_keywordsForAutoc; // 词表缓存（自动补全）
 	const EDITLEXER *_currentLexer;
 	NPThemeKind _theme;
 	NSInteger _untitledSequence;
+	BOOL _showLineNumbers;
 }
 
 - (instancetype)initWithNewUntitled:(NSInteger)sequence {
@@ -69,6 +151,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 		_fileURL = nil;
 		_untitledSequence = sequence;
 		_usedEncoding = @"UTF-8";
+		_tabTitle = [NSString stringWithFormat:@"%@-%ld", NPL(@"Untitled"), (long)sequence];
 		[self setupEditor];
 	}
 	return self;
@@ -81,8 +164,8 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 		_tabTitle = url.lastPathComponent;
 		_usedEncoding = @"UTF-8";
 		[self setupEditor];
-		[self.editor message:SCI_SETTEXT wParam:0 lParam:(sptr_t)contents.UTF8String];
-		[self.editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+		const char *utf8 = contents.UTF8String ?: "";
+		[self applyUTF8Bytes:utf8 length:strlen(utf8)];
 		[self applyLexerForExtension:url.pathExtension.lowercaseString];
 	}
 	return self;
@@ -115,8 +198,9 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	[_editor setGeneralProperty:SCI_SETTABWIDTH value:4];
 	[_editor setGeneralProperty:SCI_SETINDENT value:4];
 
-	// 光标：CARETSTYLE_LINE 宽 1（默认 iCaretStyle）
+	// 光标：竖线插在字符之间，宽 2，不盖住逗号/括号
 	[_editor message:SCI_SETCARETSTYLE wParam:CARETSTYLE_LINE lParam:0];
+	[_editor message:SCI_SETCARETWIDTH wParam:2 lParam:0];
 
 	// 折叠：自动折叠 + 省略号样式（Notepad4.cpp:1806-1807）
 	[_editor message:SCI_SETAUTOMATICFOLD
@@ -131,7 +215,9 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	// 主题按 Scheme 菜单选择解析：跟随系统 / 强制亮 / 强制暗
 	_theme = NPThemeResolve(NPThemeModeGet());
 	NPApplyTheme(_editor, _theme, nullptr);
-	[self updateLineNumberWidth];
+	[_editor message:SCI_SETIDLESTYLING wParam:SC_IDLESTYLING_ALL lParam:0];
+	_showLineNumbers = YES;
+	[self applyPersistedEditorSettings];
 
 	// 初始状态未修改（新建空文档不该显示为已修改）
 	[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
@@ -140,12 +226,56 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	_editor.delegate = self;
 }
 
-// 行号宽度 = 文本宽度("__" + 最大行号)（UpdateLineNumberWidth）
+- (void)dealloc {
+	_editor.delegate = nil;
+}
+
+// 行号宽度随行数变：Windows UpdateLineNumberWidth = TEXTWIDTH("__" + 行数)
 - (void)updateLineNumberWidth {
+	if (!_showLineNumbers) {
+		[_editor message:SCI_SETMARGINWIDTHN wParam:0 lParam:0];
+		return;
+	}
 	const sptr_t lines = [_editor message:SCI_GETLINECOUNT];
-	NSString *sample = [NSString stringWithFormat:@"__%ld", (long)lines];
-	const sptr_t w = [_editor message:SCI_TEXTWIDTH wParam:STYLE_LINENUMBER lParam:(sptr_t)sample.UTF8String];
+	NSString *sample = [NSString stringWithFormat:@"__%ld", (long)(lines < 1 ? 1 : lines)];
+	sptr_t w = [_editor message:SCI_TEXTWIDTH wParam:STYLE_LINENUMBER lParam:(sptr_t)sample.UTF8String];
+	if (w < 28) w = 28;
 	[_editor message:SCI_SETMARGINWIDTHN wParam:0 lParam:w];
+}
+- (BOOL)lineNumbersVisible { return _showLineNumbers; }
+- (void)setLineNumbersVisible:(BOOL)visible {
+	_showLineNumbers = visible;
+	[self updateLineNumberWidth];
+}
+- (void)applyPersistedEditorSettings {
+	NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+	_showLineNumbers = NPPrefBool(@"NP4ShowLineNumbers", YES);
+	if (NPPrefBool(@"NP4WordWrap", NO))
+		[_editor message:SCI_SETWRAPMODE wParam:SC_WRAP_WORD lParam:0];
+	else
+		[_editor message:SCI_SETWRAPMODE wParam:SC_WRAP_NONE lParam:0];
+	[_editor message:SCI_SETMARGINWIDTHN wParam:2 lParam:(NPPrefBool(@"NP4ShowCodeFolding", YES) ? 14 : 0)];
+	[_editor message:SCI_SETMARGINWIDTHN wParam:1 lParam:(NPPrefBool(@"NP4ShowBookmarkMargin", NO) ? 16 : 0)];
+	[_editor message:SCI_SETINDENTATIONGUIDES wParam:(NPPrefBool(@"NP4ShowIndentGuides", NO) ? SC_IV_LOOKBOTH : SC_IV_NONE) lParam:0];
+	[_editor message:SCI_SETVIEWWS wParam:(NPPrefBool(@"NP4ViewWhiteSpace", NO) ? SCWS_VISIBLEALWAYS : SCWS_INVISIBLE) lParam:0];
+	[_editor message:SCI_SETVIEWEOL wParam:(NPPrefBool(@"NP4ViewEOLs", NO) ? 1 : 0) lParam:0];
+	if ([d objectForKey:@"NP4UseTabs"])
+		[_editor message:SCI_SETUSETABS wParam:(NPPrefBool(@"NP4UseTabs", NO) ? 1 : 0) lParam:0];
+	const NSInteger tabW = NPPrefInt(@"NP4TabWidth", 4);
+	if (tabW > 0) [_editor message:SCI_SETTABWIDTH wParam:tabW lParam:0];
+	const NSInteger indW = NPPrefInt(@"NP4IndentWidth", 4);
+	if (indW > 0) [_editor message:SCI_SETINDENT wParam:indW lParam:0];
+	if ([d objectForKey:@"NP4Zoom"])
+		[_editor message:SCI_SETZOOM wParam:NPPrefInt(@"NP4Zoom", 100) lParam:0];
+	if (NPPrefBool(@"NP4LongLineMarker", NO)) {
+		[_editor message:SCI_SETEDGECOLUMN wParam:80 lParam:0];
+		[_editor message:SCI_SETEDGEMODE wParam:EDGE_LINE lParam:0];
+	}
+	_braceMatchOn = NPPrefBool(@"NP4BraceMatch", YES);
+	_urlDetectOn = NPPrefBool(@"NP4URLDetect", NO);
+	[self updateLineNumberWidth];
+	[self updateBraceHighlight];
+	if (_urlDetectOn) [self scanDetectedURLs];
 }
 
 - (void)setTheme:(NPThemeKind)theme {
@@ -168,6 +298,20 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 		[self onCharAdded:scn->ch source:(int)scn->characterSource];
 	} else if (scn->nmhdr.code == SCN_AUTOCSELECTION) {
 		// 列表选择完成
+	} else if (scn->nmhdr.code == SCN_UPDATEUI) {
+		if (scn->updated & SC_UPDATE_LINE_COUNT)
+			[self updateLineNumberWidth];
+		if (scn->updated & (SC_UPDATE_SELECTION | SC_UPDATE_CONTENT)) {
+			[self updateBraceHighlight];
+			if (_urlDetectOn && (scn->updated & SC_UPDATE_CONTENT)
+				&& [_editor message:SCI_GETLENGTH] < 262144)
+				[self scanDetectedURLs];
+			[[NSNotificationCenter defaultCenter] postNotificationName:@"EditorDocumentCaretChanged" object:self];
+		}
+		if (scn->updated & SC_UPDATE_V_SCROLL)
+			[[NSNotificationCenter defaultCenter] postNotificationName:@"EditorDocumentScrolled" object:self];
+	} else if (scn->nmhdr.code == SCN_INDICATORCLICK) {
+		[self openDetectedURLAt:[_editor string] bytePos:scn->position];
 	}
 }
 
@@ -223,29 +367,47 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	return out;
 }
 
+- (void)applyUTF8Bytes:(const char *)bytes length:(NSUInteger)len {
+	if (bytes == NULL) { bytes = ""; len = 0; }
+	ScintillaView *e = _editor;
+	const NSUInteger lines = NPCountLines(bytes, len);
+	if (len >= kNP4LargeFileBytes) _largeFileMode = YES;
+	const sptr_t mask = [e message:SCI_GETMODEVENTMASK];
+	[e message:SCI_SETMODEVENTMASK wParam:0 lParam:0];
+	[e message:SCI_SETUNDOCOLLECTION wParam:0 lParam:0];
+	[e message:SCI_EMPTYUNDOBUFFER wParam:0 lParam:0];
+	[e message:SCI_CLEARALL wParam:0 lParam:0];
+	if (len > 0) {
+		[e message:SCI_ALLOCATE wParam:(sptr_t)(len + 1) lParam:0];
+		[e message:SCI_ALLOCATELINES wParam:(sptr_t)lines lParam:0];
+		[e message:SCI_APPENDTEXT wParam:(sptr_t)len lParam:(sptr_t)bytes];
+	}
+	[e message:SCI_EMPTYUNDOBUFFER wParam:0 lParam:0];
+	[e message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+	[e message:SCI_SETUNDOCOLLECTION wParam:1 lParam:0];
+	[e message:SCI_SETMODEVENTMASK wParam:mask lParam:0];
+	_dirty = NO;
+	if (_largeFileMode) {
+		[e message:SCI_SETWRAPMODE wParam:SC_WRAP_NONE lParam:0];
+		[e message:SCI_SETMARGINWIDTHN wParam:2 lParam:0];
+	}
+}
+
 - (BOOL)loadFromURL:(NSURL *)url error:(NSError **)error {
 	NSError *readErr = nil;
-	NSData *data = [NSData dataWithContentsOfURL:url options:0 error:&readErr];
-	if (!data) {
+	NSData *data = [NSData dataWithContentsOfURL:url
+		options:NSDataReadingMappedIfSafe error:&readErr];
+	if (data == nil) {
 		if (error) *error = readErr;
 		return NO;
 	}
-	NSString *enc = nil;
-	NSString *text = DetectEncodingAndDecode(data, &enc);
-	_rawBytes = data;
-	if (!text) {
-		if (error) {
-			*error = [NSError errorWithDomain:@"Notepad4Mac" code:1
-				userInfo:@{NSLocalizedDescriptionKey: NPL(@"Cannot decode file content")}];
-		}
-		return NO;
-	}
-	_usedEncoding = enc;
+	const NPLoadBuf buf = NPPrepareUTF8Load(data);
+	_usedEncoding = buf.encoding ?: @"UTF-8";
 	_fileURL = url;
 	_tabTitle = url.lastPathComponent;
-	[_editor message:SCI_SETTEXT wParam:0 lParam:(sptr_t)text.UTF8String];
-	[_editor message:SCI_EMPTYUNDOBUFFER wParam:0 lParam:0];
-	[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+	if (data.length >= kNP4LargeFileBytes) _largeFileMode = YES;
+	_rawBytes = (data.length <= kNP4KeepRawBytesLimit) ? data : nil;
+	[self applyUTF8Bytes:buf.bytes length:buf.length];
 	[self applyLexerForExtension:url.pathExtension.lowercaseString];
 	return YES;
 }
@@ -253,7 +415,11 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 - (BOOL)writeContentsToURL:(NSURL *)url updateIdentity:(BOOL)update error:(NSError **)error {
 	NSString *text = [self.editor string];
 	NSData *data = nil;
-	if ([_usedEncoding isEqualToString:@"UTF-8"]) {
+	if ([_usedEncoding isEqualToString:@"UTF-8 BOM"]) {
+		NSMutableData *md = [NSMutableData dataWithBytes:"\xEF\xBB\xBF" length:3];
+		[md appendData:[text dataUsingEncoding:NSUTF8StringEncoding]];
+		data = md;
+	} else if ([_usedEncoding isEqualToString:@"UTF-8"]) {
 		data = [text dataUsingEncoding:NSUTF8StringEncoding];
 	} else if ([_usedEncoding isEqualToString:@"UTF-16LE"]) {
 		NSData *body = [text dataUsingEncoding:NSUTF16LittleEndianStringEncoding];
@@ -285,6 +451,7 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	if (ok && update) {
 		_fileURL = url;
 		_tabTitle = url.lastPathComponent;
+		_rawBytes = data;
 		[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
 	} else if (!ok && error) {
 		*error = writeErr;
@@ -305,7 +472,9 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	NSMutableOrderedSet *set = [NSMutableOrderedSet orderedSet];
 	if (root.length) [set addObjectsFromArray:[self autocompleteCandidates:root]];
 	else if (_keywordsForAutoc.count) [set addObjectsFromArray:_keywordsForAutoc];
-	NSString *all = [_editor string] ?: @"";
+	NSString *all = @"";
+	if ([_editor message:SCI_GETLENGTH] < 512 * 1024)
+		all = [_editor string] ?: @"";
 	if (all.length) {
 		NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:@"[A-Za-z_][A-Za-z0-9_]*"
 			options:0 error:nil];
@@ -325,10 +494,18 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 }
 
 - (void)applyLexerForExtension:(NSString *)ext {
+	if (_largeFileMode) {
+		[_editor setGeneralProperty:SCI_SETLEXER value:SCLEX_NULL];
+		_keywordsForAutoc = nil;
+		if (ext.length) _currentLexer = [LexerRegistry lexerForExtension:ext];
+		[_editor message:SCI_SETWRAPMODE wParam:SC_WRAP_NONE lParam:0];
+		[_editor message:SCI_SETMARGINWIDTHN wParam:2 lParam:0];
+		[self updateLineNumberWidth];
+		return;
+	}
 	const EDITLEXER *lex = [LexerRegistry lexerForExtension:ext];
 	if (lex) {
 		[LexerRegistry applyLexer:lex toEditor:_editor darkMode:(_theme == NPThemeDark)];
-		// 缓存词表给自动补全（词集0 = 关键字）
 		NSMutableArray *kws = [NSMutableArray array];
 		for (unsigned i = 0; i < lex->keywordCount && i < 9; i++) {
 			const char *kw = lex->pszKeyWords[i];
@@ -343,10 +520,10 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 		_keywordsForAutoc = kws.count ? kws : nil;
 		_currentLexer = lex;
 	} else {
-		// 未注册扩展：纯文本
 		[_editor setGeneralProperty:SCI_SETLEXER value:SCLEX_NULL];
-		[_editor message:SCI_COLOURISE wParam:0 lParam:-1];
 	}
+	[self updateLineNumberWidth];
+	if (_urlDetectOn) [self scanDetectedURLs];
 }
 
 - (BOOL)dirty {
@@ -354,11 +531,15 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 }
 
 - (void)reloadWithEncoding:(NSString *)encodingName {
+	if (_fileURL) {
+		NSData *disk = [NSData dataWithContentsOfURL:_fileURL];
+		if (disk) _rawBytes = disk;
+	}
 	NSString *enc = nil;
 	NSString *text = nil;
 	if (_rawBytes) {
-		if ([encodingName isEqualToString:@"UTF-8"]) {
-			enc = @"UTF-8";
+		if ([encodingName isEqualToString:@"UTF-8"] || [encodingName isEqualToString:@"UTF-8 BOM"]) {
+			enc = encodingName;
 			text = [[NSString alloc] initWithData:_rawBytes encoding:NSUTF8StringEncoding];
 			if (!text && _rawBytes.length >= 3) {
 				const UInt8 *b = static_cast<const UInt8 *>(_rawBytes.bytes);
@@ -388,13 +569,14 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	}
 	if (text) {
 		_usedEncoding = enc;
-		[_editor message:SCI_SETTEXT wParam:0 lParam:(sptr_t)text.UTF8String];
-		[_editor message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+		const char *utf8 = text.UTF8String ?: "";
+		[self applyUTF8Bytes:utf8 length:strlen(utf8)];
 	}
 }
 
 - (void)setSaveEncoding:(NSString *)encodingName {
-	if ([encodingName isEqualToString:@"UTF-8"]) _usedEncoding = @"UTF-8";
+	if ([encodingName isEqualToString:@"UTF-8 BOM"]) _usedEncoding = @"UTF-8 BOM";
+	else if ([encodingName isEqualToString:@"UTF-8"]) _usedEncoding = @"UTF-8";
 	else if ([encodingName isEqualToString:@"UTF-16LE"]) _usedEncoding = @"UTF-16LE";
 	else if ([encodingName isEqualToString:@"UTF-16BE"]) _usedEncoding = @"UTF-16BE";
 	else if ([encodingName isEqualToString:@"GBK"]) _usedEncoding = @"GB18030";
@@ -411,11 +593,111 @@ static NSString *DetectEncodingAndDecode(NSData *data, NSString **usedEncoding) 
 	return _currentLexer;
 }
 
+- (NSString *)currentLexerName {
+	return [LexerRegistry displayNameForLexer:_currentLexer];
+}
+
+- (BOOL)braceMatchEnabled { return _braceMatchOn; }
+- (void)setBraceMatchEnabled:(BOOL)on {
+	_braceMatchOn = on;
+	[self updateBraceHighlight];
+}
+
+- (void)updateBraceHighlight {
+	if (!_editor) return;
+	if (!_braceMatchOn) {
+		[_editor message:SCI_BRACEHIGHLIGHT wParam:(sptr_t)-1 lParam:(sptr_t)-1];
+		[_editor message:SCI_BRACEBADLIGHT wParam:(sptr_t)-1 lParam:0];
+		return;
+	}
+	const sptr_t pos = [_editor message:SCI_GETCURRENTPOS];
+	sptr_t brace = -1;
+	if (pos > 0) {
+		const char ch = (char)[_editor message:SCI_GETCHARAT wParam:pos - 1];
+		if (ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}')
+			brace = pos - 1;
+	}
+	if (brace < 0) {
+		const char ch = (char)[_editor message:SCI_GETCHARAT wParam:pos];
+		if (ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}')
+			brace = pos;
+	}
+	if (brace < 0) {
+		[_editor message:SCI_BRACEHIGHLIGHT wParam:(sptr_t)-1 lParam:(sptr_t)-1];
+		[_editor message:SCI_BRACEBADLIGHT wParam:(sptr_t)-1 lParam:0];
+		return;
+	}
+	const sptr_t match = [_editor message:SCI_BRACEMATCH wParam:brace lParam:0];
+	if (match >= 0) {
+		[_editor message:SCI_BRACEBADLIGHT wParam:(sptr_t)-1 lParam:0];
+		[_editor message:SCI_BRACEHIGHLIGHT wParam:brace lParam:match];
+	} else {
+		[_editor message:SCI_BRACEHIGHLIGHT wParam:(sptr_t)-1 lParam:(sptr_t)-1];
+		[_editor message:SCI_BRACEBADLIGHT wParam:brace lParam:0];
+	}
+}
+
 - (NSString *)windowTitle {
-	// 标题按当前界面语言现算，切换语言后立即生效
 	NSString *base = _fileURL ? _fileURL.lastPathComponent
 		: [NSString stringWithFormat:@"%@-%ld", NPL(@"Untitled"), (long)_untitledSequence];
 	return _dirty ? [base stringByAppendingString:NPL(@" — Modified")] : base;
+}
+
+- (BOOL)URLDetectEnabled { return _urlDetectOn; }
+- (void)setURLDetectEnabled:(BOOL)on {
+	_urlDetectOn = on;
+	[self scanDetectedURLs];
+}
+- (BOOL)largeFileMode { return _largeFileMode; }
+- (void)setLargeFileMode:(BOOL)on {
+	_largeFileMode = on;
+	if (on == NO) [self applyPersistedEditorSettings];
+	NSString *ext = _fileURL.pathExtension.lowercaseString;
+	[self applyLexerForExtension:ext.length ? ext : @"txt"];
+}
+
+- (void)scanDetectedURLs {
+	if (!_editor) return;
+	const int indic = 20;
+	[_editor message:SCI_INDICSETSTYLE wParam:indic lParam:INDIC_PLAIN];
+	[_editor message:SCI_INDICSETFORE wParam:indic lParam:0xE97D2B];
+	[_editor message:SCI_INDICSETUNDER wParam:indic lParam:1];
+	[_editor message:SCI_SETINDICATORCURRENT wParam:indic lParam:0];
+	const sptr_t len = [_editor message:SCI_GETLENGTH];
+	[_editor message:SCI_INDICATORCLEARRANGE wParam:0 lParam:len];
+	if (!_urlDetectOn || len == 0 || len > 2 * 1024 * 1024) return;
+	NSString *text = [_editor string];
+	if (text.length == 0) return;
+	NSDataDetector *det = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypeLink error:nil];
+	if (!det) return;
+	[det enumerateMatchesInString:text options:0 range:NSMakeRange(0, text.length)
+		usingBlock:^(NSTextCheckingResult *m, NSMatchingFlags flags, BOOL *stop) {
+			if (!m || m.range.length == 0) return;
+			NSString *pre = [text substringToIndex:m.range.location];
+			NSString *body = [text substringWithRange:m.range];
+			const sptr_t start = (sptr_t)[pre lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+			const sptr_t n = (sptr_t)[body lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+			[_editor message:SCI_INDICATORFILLRANGE wParam:start lParam:n];
+		}];
+}
+
+- (void)openDetectedURLAt:(NSString *)text bytePos:(sptr_t)pos {
+	if (!_urlDetectOn || text.length == 0 || pos < 0) return;
+	NSDataDetector *det = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypeLink error:nil];
+	if (!det) return;
+	[det enumerateMatchesInString:text options:0 range:NSMakeRange(0, text.length)
+		usingBlock:^(NSTextCheckingResult *m, NSMatchingFlags flags, BOOL *stop) {
+			if (!m.URL) return;
+			NSString *pre = [text substringToIndex:m.range.location];
+			NSString *body = [text substringWithRange:m.range];
+			const sptr_t start = (sptr_t)[pre lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+			const sptr_t n = (sptr_t)[body lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+			if (pos >= start && pos < start + n) {
+				if ([[[NSProcessInfo processInfo] arguments] containsObject:@"--headless"] == NO)
+					[[NSWorkspace sharedWorkspace] openURL:m.URL];
+				*stop = YES;
+			}
+		}];
 }
 
 @end

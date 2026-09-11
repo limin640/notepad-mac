@@ -1,16 +1,22 @@
-// 界面语言：中文 / English，存 NSUserDefaults，默认中文
-// 用法：菜单/状态栏/对话框里的英文原文作为键，NPL() 返回当前语言的文本
+// 界面语言：跟随系统或指定语种。英文原文作为键，NPL() 返回当前语言文本。
 #pragma once
 #import <Cocoa/Cocoa.h>
 
 typedef NS_ENUM(NSInteger, NPLanguage) {
-	NPLanguageChinese = 0,   // 默认
+	NPLanguageChinese = 0,   // zh-Hans（兼容旧测试）
 	NPLanguageEnglish = 1,
+	NPLanguageSystem = 2,
 };
 
+NSString *NPLanguageCodeGet(void);
+NSString *NPLanguagePreferenceCode(void);
+NSArray<NSDictionary<NSString *, NSString *> *> *NPLanguageCatalog(void);
+BOOL NPLanguageIsCJK(void);
+void NPLanguageSetCode(NSString *code);
+
 NPLanguage NPLanguageGet(void);
+NPLanguage NPLanguagePreference(void);
 void NPLanguageSet(NPLanguage lang);
-// 英文原文 → 当前语言；无译文时原样返回
 NSString *NPL(NSString *english);
-// 测试用：进程内覆盖，不写盘
 void NPLanguageOverrideForTesting(NPLanguage lang);
+void NPLanguageOverrideCodeForTesting(NSString *code);

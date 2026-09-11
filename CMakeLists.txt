@@ -75,11 +75,14 @@ add_executable(Notepad4 MACOSX_BUNDLE
     macapp/StatusBarView.mm
     macapp/NPTheme.mm
     macapp/NPLocalization.mm
+    macapp/EditCommands.mm
+    macapp/PreviewPane.mm
 )
 set_source_files_properties(
     macapp/main.mm macapp/MainWindowController.mm macapp/EditorDocument.mm
     macapp/LexerRegistry.mm macapp/FindReplacePanel.mm macapp/StatusBarView.mm
-    macapp/NPTheme.mm macapp/NPLocalization.mm
+    macapp/NPTheme.mm macapp/NPLocalization.mm macapp/EditCommands.mm
+    macapp/PreviewPane.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc"
 )
 target_include_directories(Notepad4 PRIVATE
@@ -90,17 +93,20 @@ target_include_directories(Notepad4 PRIVATE
     "${SCI_ROOT}/lexlib"
     ${CMAKE_SOURCE_DIR}/macapp
 )
-target_link_libraries(Notepad4 PRIVATE scintilla lexers_def)
+find_library(WEBKIT_F WebKit REQUIRED)
+target_link_libraries(Notepad4 PRIVATE scintilla lexers_def ${WEBKIT_F})
 set_target_properties(Notepad4 PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "Notepad4"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.ethan.notepad4mac"
-    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.limin640.notepad4mac"
+    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.19"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.19"
     MACOSX_BUNDLE_INFO_STRING "Notepad4 for macOS"
     MACOSX_BUNDLE_ICON_FILE "Notepad4.icns"
-    MACOSX_BUNDLE_LONG_VERSION_STRING "0.1.0 (Notepad4-mac port)"
+    MACOSX_BUNDLE_LONG_VERSION_STRING "0.1.19"
+    MACOSX_BUNDLE_COPYRIGHT "Copyright © 2026 limin640. Personal/non-commercial use; commercial use requires a license."
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/macapp/Info.plist"
 )
-# 图标拷入 bundle
+# 图标、主题、打赏码拷入 bundle
 add_custom_command(TARGET Notepad4 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/macapp/Resources/Notepad4.icns"
@@ -110,5 +116,11 @@ add_custom_command(TARGET Notepad4 POST_BUILD
         "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/Notepad4 DarkTheme.ini"
     COMMAND /usr/bin/rsync -a "${CMAKE_SOURCE_DIR}/macapp/ToolbarIcons/"
         "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/LICENSE"
+        "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/macapp/locale"
+        "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/locale"
     COMMAND touch "$<TARGET_BUNDLE_DIR:Notepad4>"
-    COMMENT "Copying app icon, toolbar icons, dark theme")
+    COMMENT "Copying app icon, toolbar icons, dark theme, license, locales")

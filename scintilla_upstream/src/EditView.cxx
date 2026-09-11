@@ -1723,8 +1723,9 @@ void EditView::DrawCarets(Surface *surface, const EditModel &model, const ViewSt
 				constexpr XYPOSITION minimumBlockCaretWidth = 3.0f;
 				widthOverstrikeCaret = std::max(widthOverstrikeCaret, minimumBlockCaretWidth);
 
-				// Move back slightly so line caret overlaps both character cells unless at start of text area.
-				constexpr XYPOSITION justOverHalf = 0.51f;
+				// Insert caret sits on the boundary. The old 0.51px pull-back covered
+				// thin glyphs (comma, parentheses) on HiDPI Cocoa.
+				constexpr XYPOSITION justOverHalf = 0.0f;
 				const XYPOSITION caretWidthOffset = (xposCaret > 0) ? justOverHalf : 0;
 
 				xposCaret += xOrigin;

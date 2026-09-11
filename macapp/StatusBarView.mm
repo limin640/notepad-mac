@@ -1,6 +1,5 @@
 // 状态栏：复刻 Notepad4 的 IDS_STATUSITEM_FORMAT
-// "Ln %s / %s \nCol %s / %s \nCh %s / %s \nSel %s / %s \nSelLn %s \nFnd %s "
-// 后续格：词法器 | 编码 | EOL | INS/OVR | 缩放 | 文档大小
+// 左下角「预览」按钮 + Ln / Col / Ch / Sel / 词法器 / 编码 / EOL / INS / 缩放 / 大小
 #import "StatusBarView.h"
 #import "NPLocalization.h"
 #import "EditorDocument.h"
@@ -25,17 +24,46 @@ static NSString *WStr2(const wchar_t *ws) {
 		encoding:NSUTF32LittleEndianStringEncoding];
 }
 
+@interface NPStatusPreviewButton : NSButton
+@property (nonatomic) BOOL previewOn;
+@end
+@implementation NPStatusPreviewButton
+- (BOOL)isFlipped { return YES; }
+- (void)drawRect:(NSRect)dirtyRect {
+	(void)dirtyRect;
+	NSRect r = NSInsetRect(self.bounds, 1, 2);
+	if (self.previewOn) {
+		[[[NSColor controlAccentColor] colorWithAlphaComponent:0.28] setFill];
+		[[NSBezierPath bezierPathWithRoundedRect:r xRadius:4 yRadius:4] fill];
+	} else if (self.highlighted) {
+		[[[NSColor selectedContentBackgroundColor] colorWithAlphaComponent:0.22] setFill];
+		[[NSBezierPath bezierPathWithRoundedRect:r xRadius:4 yRadius:4] fill];
+	}
+	NSColor *c = self.previewOn ? [NSColor controlAccentColor] : [NSColor labelColor];
+	NSDictionary *attrs = @{
+		NSFontAttributeName: [NSFont systemFontOfSize:11],
+		NSForegroundColorAttributeName: c
+	};
+	NSString *title = self.title ?: @"";
+	NSSize sz = [title sizeWithAttributes:attrs];
+	[title drawAtPoint:NSMakePoint(NSMidX(self.bounds) - sz.width / 2.0,
+		NSMidY(self.bounds) - sz.height / 2.0 + 1.0) withAttributes:attrs];
+}
+@end
+
 @interface StatusBarView ()
 @property (nonatomic, strong) NSMutableArray<NSTextField *> *cells;
+@property (nonatomic, strong) NPStatusPreviewButton *previewBtn;
+@property (nonatomic, weak) id previewTarget;
+@property (nonatomic) BOOL previewOn;
 @end
 
 @implementation StatusBarView
 
 - (void)drawRect:(NSRect)dirtyRect {
-	// 只填自身 bounds（dirtyRect 可能是整窗，会盖住其它视图）
+	(void)dirtyRect;
 	[[NSColor windowBackgroundColor] setFill];
 	NSRectFill(self.bounds);
-	// 顶部 1px 描边（Windows 状态栏上沿）
 	[[NSColor separatorColor] setFill];
 	NSRectFill(NSMakeRect(0, self.bounds.size.height - 1, self.bounds.size.width, 1));
 }
@@ -50,20 +78,51 @@ static NSString *WStr2(const wchar_t *ws) {
 	return self;
 }
 
-// 中文标签比英文缩写宽，格子宽度按语言调整
 - (NSArray<NSNumber *> *)widthsForLanguage {
-	if (NPLanguageGet() == NPLanguageChinese) {
-		return @[@0, @72, @72, @86, @66, @56, @0, @110, @56, @44, @34, @40, @56];
+	if (NPLanguageIsCJK()) {
+		return @[@0, @80, @104, @86, @66, @56, @0, @110, @56, @44, @34, @40, @56];
 	}
 	return @[@0, @64, @64, @64, @52, @44, @0, @110, @56, @44, @34, @40, @56];
+}
+
+- (void)rebuildPreviewButton {
+	if (_previewBtn) [_previewBtn removeFromSuperview];
+	NPStatusPreviewButton *b = [[NPStatusPreviewButton alloc] initWithFrame:NSZeroRect];
+	b.bordered = NO;
+	b.buttonType = NSButtonTypeMomentaryChange;
+	b.focusRingType = NSFocusRingTypeNone;
+	b.title = NPL(@"Preview");
+	b.toolTip = NPL(@"Preview");
+	b.target = _previewTarget;
+	b.action = @selector(viewPreview);
+	b.previewOn = _previewOn;
+	b.translatesAutoresizingMaskIntoConstraints = NO;
+	[self addSubview:b];
+	[b.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:4].active = YES;
+	[b.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
+	[b.heightAnchor constraintEqualToConstant:18].active = YES;
+	[b.widthAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+	_previewBtn = b;
 }
 
 - (void)buildCells {
 	for (NSView *v in [self.subviews copy]) [v removeFromSuperview];
 	[_cells removeAllObjects];
+	[self rebuildPreviewButton];
 
 	NSArray<NSNumber *> *widths = [self widthsForLanguage];
-	NSView *prev = nil;
+	NSView *prev = _previewBtn;
+	NSView *sep0 = [[NSView alloc] initWithFrame:NSZeroRect];
+	sep0.wantsLayer = YES;
+	sep0.layer.backgroundColor = [NSColor separatorColor].CGColor;
+	sep0.translatesAutoresizingMaskIntoConstraints = NO;
+	[self addSubview:sep0];
+	[sep0.widthAnchor constraintEqualToConstant:1].active = YES;
+	[sep0.heightAnchor constraintEqualToConstant:14].active = YES;
+	[sep0.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
+	[prev.trailingAnchor constraintEqualToAnchor:sep0.leadingAnchor constant:-4].active = YES;
+	prev = sep0;
+
 	for (NSUInteger i = 0; i < widths.count; i++) {
 		NSTextField *f = [NSTextField labelWithString:@""];
 		f.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
@@ -88,20 +147,33 @@ static NSString *WStr2(const wchar_t *ws) {
 			[sep.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
 			[prev.trailingAnchor constraintEqualToAnchor:sep.leadingAnchor constant:-2].active = YES;
 			[f.leadingAnchor constraintEqualToAnchor:sep.trailingAnchor constant:2].active = YES;
-		}
-		if (!prev) {
-			[self.leadingAnchor constraintEqualToAnchor:f.leadingAnchor constant:-6].active = YES;
+			prev = f;
+		} else {
+			[f.leadingAnchor constraintEqualToAnchor:prev.trailingAnchor constant:4].active = YES;
+			prev = f;
 		}
 		[_cells addObject:f];
-		prev = f;
 	}
 	[self.trailingAnchor constraintGreaterThanOrEqualToAnchor:prev.trailingAnchor constant:6].active = YES;
 }
 
-// 切换语言后重建格子
 - (void)applyLanguage {
 	[self buildCells];
 }
+
+- (void)setPreviewTarget:(id)target {
+	_previewTarget = target;
+	_previewBtn.target = target;
+	_previewBtn.action = @selector(viewPreview);
+}
+
+- (void)setPreviewActive:(BOOL)on {
+	_previewOn = on;
+	_previewBtn.previewOn = on;
+	_previewBtn.needsDisplay = YES;
+}
+
+- (NSButton *)previewButton { return _previewBtn; }
 
 - (NSTextField *)cellAt:(NSUInteger)i {
 	return (i < _cells.count) ? _cells[i] : nil;
@@ -129,7 +201,6 @@ static NSString *WStr2(const wchar_t *ws) {
 			- [e message:SCI_LINEFROMPOSITION wParam:selStart] + 1;
 	}
 
-	// Ln / Col / Ch / Sel / SelLn / Fnd
 	[self cellAt:0].stringValue = [NSString stringWithFormat:NPL(@"Ln %@ / %@"),
 		Num(line + 1), Num(lines)];
 	[self cellAt:1].stringValue = [NSString stringWithFormat:NPL(@"Col %@ / %@"),
@@ -141,27 +212,16 @@ static NSString *WStr2(const wchar_t *ws) {
 	[self cellAt:4].stringValue = [NSString stringWithFormat:NPL(@"SelLn %@"), Num(selLines)];
 	[self cellAt:5].stringValue = NPL(@"Fnd 0");
 
-	// 词法器名
 	const EDITLEXER *lex = doc.currentLexer;
 	[self cellAt:6].stringValue = lex ? WStr2(lex->pszName) : NPL(@"Text File");
-
-	// 编码
 	[self cellAt:7].stringValue = doc.currentEncoding ?: @"UTF-8";
-
-	// EOL
 	const sptr_t eol = [e message:SCI_GETEOLMODE];
 	[self cellAt:8].stringValue = (eol == SC_EOL_CRLF) ? @"CR+LF"
 		: (eol == SC_EOL_CR) ? @"CR" : @"LF";
-
-	// INS/OVR
 	const BOOL ovr = [e message:SCI_GETOVERTYPE];
 	[self cellAt:9].stringValue = ovr ? NPL(@"OVR") : NPL(@"INS");
-
-	// 缩放
-	const long zoom = [e message:SCI_GETZOOM];   // fork: 百分比（100 = 默认）
+	const long zoom = [e message:SCI_GETZOOM];
 	[self cellAt:10].stringValue = [NSString stringWithFormat:@"%ld%%", zoom > 0 ? zoom : 100];
-
-	// 大小
 	const sptr_t len = [e message:SCI_GETLENGTH];
 	NSString *sizeStr;
 	if (len < 1024) sizeStr = [NSString stringWithFormat:@"%ld B", (long)len];

@@ -31,5 +31,18 @@ struct EDITLEXER;
 - (NPThemeKind)theme;
 @property (nonatomic, readonly, nullable) const EDITLEXER *currentLexer;
 - (NSString *)windowTitle;
+- (void)updateLineNumberWidth;
+- (void)setLineNumbersVisible:(BOOL)visible;
+- (BOOL)lineNumbersVisible;
+- (void)applyPersistedEditorSettings;
+- (NSString *)currentLexerName;
+- (void)setBraceMatchEnabled:(BOOL)on;
+- (BOOL)braceMatchEnabled;
+- (void)updateBraceHighlight;
+- (void)setURLDetectEnabled:(BOOL)on;
+- (BOOL)URLDetectEnabled;
+- (void)setLargeFileMode:(BOOL)on;
+- (BOOL)largeFileMode;
+- (void)scanDetectedURLs;
 
 @end

@@ -166,12 +166,15 @@ static void LoadDarkThemeOverrides(void) {
 + (const EDITLEXER *)lexerForExtension:(NSString *)ext {
 	if (ext.length == 0) return nullptr;
 	NSString *want = ext.lowercaseString;
+	if ([want hasPrefix:@"."]) want = [want substringFromIndex:1];
 	for (EDITLEXER *lex : kLexers) {
 		NSString *exts = WStr(lex->pszDefExt);
 		NSArray *parts = [exts componentsSeparatedByCharactersInSet:
 			[NSCharacterSet characterSetWithCharactersInString:@"; "]];
 		for (__strong NSString *e in parts) {
-			if (e.length && [e.lowercaseString isEqualToString:want]) return lex;
+			NSString *got = e.lowercaseString;
+			if ([got hasPrefix:@"."]) got = [got substringFromIndex:1];
+			if (got.length && [got isEqualToString:want]) return lex;
 		}
 	}
 	return nullptr;
@@ -213,8 +216,24 @@ static void LoadDarkThemeOverrides(void) {
 		[self applyStyleValue:val toStyle:es.iStyle editor:editor];
 	}
 
-	// 5. 强制重着色
-	[editor message:SCI_COLOURISE wParam:0 lParam:-1];
+	NSDictionary *user = nil;
+	NSDictionary *allUser = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"NP4StyleOverrides"];
+	id userLex = allUser[WStr(lex->pszName)];
+	if ([userLex isKindOfClass:[NSDictionary class]]) user = userLex;
+	if (user.count) {
+		for (unsigned i = 0; i < lex->iStyleCount; i++) {
+			const EDITSTYLE &es = lex->Styles[i];
+			NSString *uval = user[WStr(es.pszName)];
+			if (uval.length) [self applyStyleValue:uval toStyle:es.iStyle editor:editor];
+		}
+	}
+
+	// 5. 小文件立刻着色；大文件交给 idle styling（对照 Windows Style_SetLexer）
+	const sptr_t n = [editor message:SCI_GETLENGTH];
+	if (n > 0 && n < 262144)
+		[editor message:SCI_COLOURISE wParam:0 lParam:-1];
+	else
+		[editor message:SCI_STARTSTYLING wParam:0 lParam:0];
 }
 
 + (void)applyEditStyle:(const EDITSTYLE &)es toEditor:(ScintillaView *)editor {
@@ -274,6 +293,48 @@ static void LoadDarkThemeOverrides(void) {
 			@"sclex": @(lex->iLexer)}];
 	}
 	return out;
+}
+
++ (NSString *)displayNameForLexer:(const EDITLEXER *)lex {
+	return lex ? WStr(lex->pszName) : @"";
+}
+
++ (NSArray<NSDictionary *> *)styleDescriptorsForLexer:(const EDITLEXER *)lex {
+	NSMutableArray *out = [NSMutableArray array];
+	if (!lex) return out;
+	for (unsigned i = 0; i < lex->iStyleCount; i++) {
+		const EDITSTYLE &es = lex->Styles[i];
+		[out addObject:@{@"name": WStr(es.pszName),
+			@"style": @(es.iStyle),
+			@"default": WStr(es.pszDefault)}];
+	}
+	return out;
+}
+
++ (NSString *)userStyleValueForLexerName:(NSString *)name styleName:(NSString *)styleName {
+	if (!name.length || !styleName.length) return nil;
+	NSDictionary *all = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"NP4StyleOverrides"];
+	id lex = all[name];
+	return [lex isKindOfClass:[NSDictionary class]] ? lex[styleName] : nil;
+}
+
++ (void)setUserStyleValue:(NSString *)val forLexerName:(NSString *)name styleName:(NSString *)styleName {
+	if (!name.length || !styleName.length) return;
+	NSMutableDictionary *all = [[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"NP4StyleOverrides"] mutableCopy] ?: [NSMutableDictionary dictionary];
+	NSMutableDictionary *lex = [all[name] isKindOfClass:[NSDictionary class]] ? [all[name] mutableCopy] : [NSMutableDictionary dictionary];
+	if (val.length) lex[styleName] = val;
+	else [lex removeObjectForKey:styleName];
+	if (lex.count) all[name] = lex;
+	else [all removeObjectForKey:name];
+	[[NSUserDefaults standardUserDefaults] setObject:all forKey:@"NP4StyleOverrides"];
+}
+
++ (void)clearUserOverridesForLexerName:(NSString *)name {
+	if (!name.length) return;
+	NSMutableDictionary *all = [[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"NP4StyleOverrides"] mutableCopy];
+	if (!all) return;
+	[all removeObjectForKey:name];
+	[[NSUserDefaults standardUserDefaults] setObject:all forKey:@"NP4StyleOverrides"];
 }
 
 @end

@@ -18,5 +18,10 @@ struct EDITLEXER;
 
 // 生成扩展名 -> 词法器 调试清单
 + (NSArray<NSDictionary *> *)allLexersInfo;
++ (NSString *)displayNameForLexer:(nullable const EDITLEXER *)lex;
++ (NSArray<NSDictionary *> *)styleDescriptorsForLexer:(nullable const EDITLEXER *)lex;
++ (void)setUserStyleValue:(NSString *)val forLexerName:(NSString *)name styleName:(NSString *)styleName;
++ (void)clearUserOverridesForLexerName:(NSString *)name;
++ (nullable NSString *)userStyleValueForLexerName:(NSString *)name styleName:(NSString *)styleName;
 
 @end

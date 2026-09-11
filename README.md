@@ -1,75 +1,93 @@
-# notepad4-mac
+# Notepad4 for macOS
 
-[zufuliu/notepad4](https://github.com/zufuliu/notepad4) 的 macOS 原生移植（路线 C：Scintilla 内核 + 官方 Cocoa 后端 + AppKit 壳，零 Wine/Electron）。
+**English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
-**体积 3 MB**（Windows 原版 2 MB，Wine 封装约 1 GB）。
+**4 MB. Native. Open a file and type.**
 
-## 界面（按 Notepad4 源码逐项复刻）
+The fast, tiny [Notepad4](https://github.com/zufuliu/notepad4) from Windows, now actually on the Mac: Scintilla core, official Cocoa backend, AppKit shell. Not Wine wrapping a Windows exe. Not Electron wrapping a browser.
 
-- **菜单**：File / Edit / Search / View / Scheme / Settings / Tools / Help（对照 Notepad4.rc 原文，含全部子菜单与快捷键）
-- **工具栏**：直接使用原版 `Toolbar24.bmp` 位图图标，顺序取自 `DefaultToolbarButtons`
-  （Open Favorites · Browse │ New · New Window · Open▾ │ Save · Save As · Save Copy │ Undo · Redo │
-  Cut · Copy · Paste · Delete │ Find · Replace │ Word Wrap │ Toggle Folds▾ │ Zoom In · Zoom Out │
-  Syntax Scheme · Customize Schemes │ Exit）
-- **状态栏**：`Ln x / y` │ `Col x / y` │ `Ch x / y` │ `Sel bytes / chars` │ `SelLn n` │ `Fnd n` │
-  `词法器名` │ `编码` │ `CR+LF` │ `INS` │ `100%` │ `大小`（对照 `IDS_STATUSITEM_FORMAT`）
-- **编辑区**：行号栏（`#2B91AF`）、折叠栏（方框 +/-，`#8080FF`/`#ADD8E6`）、当前行 outline 框、
-  自动折叠 + 省略号（Boxed），TAB=4，光标 1px 线
-- **主题**：Scheme → Style Theme → `Default`（亮）/ `Dark`（暗，颜色取自 `Notepad4 DarkTheme.ini`）。
-  启动时跟随 macOS 系统外观（暗色系统 → 暗色编辑区 + 暗色工具栏/状态栏；亮色系统 → 全浅色）
-- 单文档（Notepad4 本身无标签页）
+macOS TextEdit is too bare. VS Code / Cursor drink RAM before you hit a key. CotEditor is nice, but it is not Notepad4. This repo takes the third path — **port Notepad4 as-is, still around 4 MB.**
 
-## 功能
+A Wine bundle is about 1 GB. This app is about **4 MB**. Two orders of magnitude.
 
-| 功能 | 状态 |
+Personal and non-commercial use is free. Commercial use of this Mac port needs a license. Upstream Notepad4 / Scintilla / Boost keep their original licenses. See [LICENSE](LICENSE).
+
+## Why this
+
+- **Instant.** Double-click, you are in the editor. No welcome page, no marketplace, no language server warming up. Logs, configs, scripts, notes — open and type.
+- **Native.** Menus, windows, and dark mode follow macOS. GB18030 / GBK / BIG5 / Shift-JIS are detected from the file. Text from Chinese Windows does not open as mojibake.
+- **90 lexers, same colors as the Windows original.** C, Python, Go, Rust, JSON, Markdown… the word lists and styles were copied from Notepad4, not approximated.
+- **UI rebuilt item by item.** Toolbar bitmaps, status bar `Ln / Col / Ch / Sel`, fold margin, current-line frame. If you already know Notepad4, you already know this.
+- **Preview when you need it.** Markdown, HTML, and images render in the right pane. No extra browser.
+- **UI in 11 languages, following the system.** English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Italiano, Português, Русский.
+
+What it is not: not an IDE. No debugger, no Git pane, no AI sidebar. That is VS Code’s job. Notepad4’s job is **open, edit, save, leave.**
+
+## Download
+
+Get the DMG from [Releases](https://github.com/limin640/notepad4-mac/releases) and drop it on Applications. Apple silicon (M1 and later), macOS 11+.
+
+The build is not notarized. The first launch from the internet will say the developer cannot be verified. **That is Gatekeeper, not malware.** Do one of these once:
+
+1. **Control-click** (or right-click) the icon → Open → Open
+2. System Settings → Privacy & Security → Open Anyway
+3. Terminal: `xattr -cr /Applications/Notepad4.app`
+
+After that, double-click works. Intel Macs: build from source.
+
+## Donate
+
+If this port saved you a 1 GB Wine install or a VS Code cold start, Help → Donate, or scan the WeChat Pay code:
+
+![Donate](docs/donate/wechat.png)
+
+## What’s in
+
+| | |
 |---|---|
-| 90 个词法器（notepad4 原版词表+配色） | ✅ lexers_def/ 全量 |
-| 亮/暗主题（源码颜色值） | ✅ 像素级验证 #1E1E1E / #00B050 / #A349A4 |
-| 代码折叠 | ✅ Box tree 标记 + 自动折叠 |
-| 语法着色（每词法器独立样式） | ✅ 继承 stlXXX.cpp 原版配色 |
-| 编码检测/转换 | ✅ BOM/UTF-8/GB18030 探测；重载为 7 种编码；保存编码切换 |
-| 查找替换 | ✅ 正则/大小写/全字；替换单个/全部；循环查找 |
-| 自动补全 | ✅ 词表驱动（≥2 字符触发） |
-| 书签 | ✅ 切换/下一个/清除 |
-| 行操作 | ✅ 移动/复制/剪切/删除/合并/转置 |
-| 大小写转换 | ✅ 大写/小写 |
-| 查看 | ✅ 自动换行/行号/空白字符/换行符/缩进线/缩放/状态栏 |
-| 跳转到行/括号匹配 | ✅ |
-| 打印 | ✅ |
-| 跟随系统明暗外观 | ✅ 工具栏/状态栏/编辑区同色系切换 |
+| Syntax | 90 lexers, original word lists and colors |
+| Theme | Follow system / light / dark — toolbar and status bar included |
+| Encoding | BOM, UTF-8, GB18030 detect; UTF-16, GBK, BIG5, Shift-JIS reload and save |
+| Find / replace | Regex, case, whole word; one or all |
+| Edit | Completion, bookmarks, folding, line ops, case, enclose, sort, conversions |
+| Preview | Markdown, HTML, png/jpg/webp/heic and similar |
+| UI language | Follow system, or lock English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Italiano, Português, Русский |
 
-## 构建
+Menus, toolbar, and status bar follow the Windows `Notepad4.rc` text. This is not a thin “good enough” shell.
+
+## Build
 
 ```bash
-./build.sh          # = cmake -S . -B build && cmake --build build
+./build.sh
 open build/Notepad4.app
 ```
 
-要求：macOS 11+，Xcode（clang C++20），CMake ≥ 3.20。当前 arm64（可加 x86_64 universal）。
+macOS 11+, Xcode (clang C++20), CMake ≥ 3.20. Default arch is arm64.
 
-## 架构
+DMG for GitHub Releases (do not commit it):
 
-```
-scintilla_upstream/          # notepad4 的 Scintilla 5.6.6 fork
-├── src/                     # 平台无关内核 + macOS 适配（PortMacOS.cxx 等）
-├── cocoa/                   # 官方 Cocoa 后端（签名对齐 fork 接口）+ PortMacOSBatch.mm
-├── lexers/ lexlib/          # 词法器引擎
-lexers_def/                  # notepad4 原版 EDITLEXER 数据（90 语言词表+样式，纯数据）
-macapp/                      # AppKit 壳（窗口/工具栏/状态栏/菜单/查找/文档）
-tests/sci_test.mm            # 内核冒烟测试
+```bash
+./scripts/package.sh
 ```
 
-### 移植关键点
+## Layout
 
-| Windows | macOS |
-|---|---|
-| SRWLock/PTP 线程池 | std::shared_mutex / std::async（并行布局已禁用：Quartz surface 非线程安全） |
-| WaitableTimer | steady_clock 截止时间 |
-| MultiByteToWideChar | CFStringCreateWithBytes 编码映射 |
-| QueryPerformanceCounter | steady_clock 纳秒 |
-| Editor::BatchUpdate (ScintillaWin) | cocoa/PortMacOSBatch.mm |
-| dwUrlThreshold（应用层） | src/PortMacOS.cxx（默认 16MB） |
+```
+scintilla_upstream/   Scintilla 5.6.6 (Notepad4 fork) + official Cocoa backend
+lexers_def/           Original 90-language word lists and styles (data only)
+macapp/               AppKit shell: window, menus, toolbar, status, find, preview
+tests/sci_test.mm     Core smoke tests
+```
 
-## 许可
+Windows SRWLock / thread pool / encoding APIs become the standard library and CFString. Parallel layout is off — a Quartz surface is not thread-safe. The parts that should be fast still are.
 
-Notepad4 / Scintilla: BSD 3-Clause（保留原始 License.txt）。移植新增文件同许可。
+## License
+
+See [LICENSE](LICENSE).
+
+- **Original port code** (`macapp/` sources, build scripts, etc.): [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). Personal use is fine; commercial use needs a license.
+- **Notepad4 lexers / icons, etc.:** BSD 3-Clause (Zufu Liu / Florian Balmer and others).
+- **Scintilla:** historical license (Neil Hodgson).
+- **Boost.Regex headers:** Boost Software License 1.0.
+
+Commercial license: <https://github.com/limin640/notepad4-mac/issues>
