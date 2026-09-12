@@ -1,4 +1,4 @@
-# Notepad Mac
+# Notepad for macOS
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | **Русский**
 
@@ -25,7 +25,7 @@
 
 DMG из [Releases](https://github.com/limin640/notepad-mac/releases) в Программы. Apple silicon, macOS 11+.
 
-Без нотаризации. При первом запуске система предупредит. **Это не вредонос.** Control-клик → Открыть, или `xattr -cr "/Applications/Notepad Mac.app"`.
+Без нотаризации. При первом запуске система предупредит. **Это не вредонос.** Control-клик → Открыть, или `xattr -cr /Applications/Notepad.app`.
 
 ## Поддержать
 
@@ -37,7 +37,7 @@ DMG из [Releases](https://github.com/limin640/notepad-mac/releases) в Про�
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Лицензия

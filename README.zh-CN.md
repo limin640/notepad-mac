@@ -1,4 +1,4 @@
-# Notepad Mac
+# Notepad for macOS
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
@@ -6,7 +6,7 @@
 
 Mac 上的原生记事本：Scintilla 内核 + 官方 Cocoa 后端 + AppKit 壳。不是 Wine，不是 Electron。大约 **4 MB**。
 
-内核来自 Windows [Notepad4](https://github.com/zufuliu/notepad4)——词法器、配色、手感都还在——名字改成大家会搜的 **Notepad Mac**。
+内核来自 Windows [Notepad4](https://github.com/zufuliu/notepad4)——词法器、配色、手感都还在。软件就叫 **Notepad**。
 
 Wine 封装大约 1 GB。这边大约 **4 MB**。差两个数量级。
 
@@ -25,13 +25,13 @@ Wine 封装大约 1 GB。这边大约 **4 MB**。差两个数量级。
 
 ## 下载
 
-从 [Releases](https://github.com/limin640/notepad-mac/releases) 下 DMG，把 **Notepad Mac** 拖进「应用程序」。Apple 芯片（M1 及更新），macOS 11+。
+从 [Releases](https://github.com/limin640/notepad-mac/releases) 下 DMG，把 **Notepad** 拖进「应用程序」。Apple 芯片（M1 及更新），macOS 11+。
 
 没有 Apple 公证。网上第一次打开会提示「无法验证开发者」，**不是病毒**。任选一次即可：
 
 1. **按住 Control 点图标**（或右键）→ 打开 → 再点打开
 2. 系统设置 → 隐私与安全性 → 「仍要打开」
-3. 终端：`xattr -cr "/Applications/Notepad Mac.app"`
+3. 终端：`xattr -cr /Applications/Notepad.app`
 
 以后双击就能开。Intel Mac 请从源码编译。
 
@@ -59,7 +59,7 @@ Wine 封装大约 1 GB。这边大约 **4 MB**。差两个数量级。
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 macOS 11+，Xcode（clang C++20），CMake ≥ 3.20。默认 arm64。

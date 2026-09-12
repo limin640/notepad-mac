@@ -1,4 +1,4 @@
-# Notepad Mac
+# Notepad for macOS
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
@@ -6,7 +6,7 @@
 
 A native Mac notepad: Scintilla core, official Cocoa backend, AppKit shell. Not Wine. Not Electron. About **4 MB**.
 
-It is a port of Windows [Notepad4](https://github.com/zufuliu/notepad4) — same lexers, same colors, same muscle memory — shipped under a name people actually search for.
+It is a port of Windows [Notepad4](https://github.com/zufuliu/notepad4) — same lexers, same colors, same muscle memory. The app is called **Notepad**.
 
 A Wine bundle is about 1 GB. This app is about **4 MB**. Two orders of magnitude.
 
@@ -25,13 +25,13 @@ What it is not: not an IDE. No debugger, no Git pane, no AI sidebar. That is VS 
 
 ## Download
 
-Get the DMG from [Releases](https://github.com/limin640/notepad-mac/releases) and drop **Notepad Mac** on Applications. Apple silicon (M1 and later), macOS 11+.
+Get the DMG from [Releases](https://github.com/limin640/notepad-mac/releases) and drop **Notepad** on Applications. Apple silicon (M1 and later), macOS 11+.
 
 The build is not notarized. The first launch from the internet will say the developer cannot be verified. **That is Gatekeeper, not malware.** Do one of these once:
 
 1. **Control-click** (or right-click) the icon → Open → Open
 2. System Settings → Privacy & Security → Open Anyway
-3. Terminal: `xattr -cr "/Applications/Notepad Mac.app"`
+3. Terminal: `xattr -cr /Applications/Notepad.app`
 
 After that, double-click works. Intel Macs: build from source.
 
@@ -59,7 +59,7 @@ Menus, toolbar, and status bar follow the Windows `Notepad4.rc` text. This is no
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 macOS 11+, Xcode (clang C++20), CMake ≥ 3.20. Default arch is arm64.

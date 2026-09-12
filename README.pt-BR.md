@@ -1,4 +1,4 @@
-# Notepad Mac
+# Notepad for macOS
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | **Português** | [Русский](README.ru.md)
 
@@ -25,7 +25,7 @@ Não é uma IDE. O trabalho é **abrir, editar, salvar, sair.**
 
 DMG em [Releases](https://github.com/limin640/notepad-mac/releases), para Aplicativos. Apple silicon, macOS 11+.
 
-Sem notarização. A primeira abertura avisa sobre o desenvolvedor. **Não é malware.** Control-clique → Abrir, ou `xattr -cr "/Applications/Notepad Mac.app"`.
+Sem notarização. A primeira abertura avisa sobre o desenvolvedor. **Não é malware.** Control-clique → Abrir, ou `xattr -cr /Applications/Notepad.app`.
 
 ## Doar
 
@@ -37,7 +37,7 @@ Ajuda → Doar, ou WeChat Pay:
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Licença

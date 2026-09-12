@@ -26,7 +26,7 @@ def switcher(current):
 
 
 BODIES = {
-    "README.zh-Hant.md": """# Notepad Mac
+    "README.zh-Hant.md": """# Notepad for macOS
 
 {nav}
 
@@ -55,7 +55,7 @@ Wine 封裝大約 1 GB。這邊大約 **4 MB**。差兩個數量級。
 
 從 [Releases](https://github.com/limin640/notepad-mac/releases) 下載 DMG，拖進「應用程式」。Apple 晶片，macOS 11+。
 
-沒有 Apple 公證。第一次從網路上打開會被攔住，**不是病毒**。任選一次：Control-點擊 → 打開；或系統設定 → 隱私權與安全性 → 仍要打開；或 `xattr -cr "/Applications/Notepad Mac.app"`。
+沒有 Apple 公證。第一次從網路上打開會被攔住，**不是病毒**。任選一次：Control-點擊 → 打開；或系統設定 → 隱私權與安全性 → 仍要打開；或 `xattr -cr /Applications/Notepad.app`。
 
 ## 贊助
 
@@ -67,14 +67,14 @@ Help → 贊助，或掃 WeChat Pay：
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## 授權
 
 見 [LICENSE](LICENSE)。個人自用可以，本移植商業使用需授權：<https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.ja.md": """# Notepad Mac
+    "README.ja.md": """# Notepad for macOS
 
 {nav}
 
@@ -101,7 +101,7 @@ IDE ではありません。仕事は **開く、直す、保存、終了** で�
 
 [Releases](https://github.com/limin640/notepad-mac/releases) の DMG を Applications へ。Apple シリコン、macOS 11+。
 
-公証なし。初回は「開発元を確認できない」と出ます。**マルウェアではありません。** Control-クリック → 開く、または `xattr -cr "/Applications/Notepad Mac.app"`。
+公証なし。初回は「開発元を確認できない」と出ます。**マルウェアではありません。** Control-クリック → 開く、または `xattr -cr /Applications/Notepad.app`。
 
 ## 寄付
 
@@ -113,14 +113,14 @@ Help → 寄付、または WeChat Pay：
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## ライセンス
 
 [LICENSE](LICENSE)。商用：<https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.ko.md": """# Notepad Mac
+    "README.ko.md": """# Notepad for macOS
 
 {nav}
 
@@ -147,7 +147,7 @@ IDE가 아닙니다. 할 일은 **열고, 고치고, 저장하고, 나가는 것
 
 [Releases](https://github.com/limin640/notepad-mac/releases)의 DMG를 응용 프로그램으로. Apple 실리콘, macOS 11+.
 
-공증 없음. 처음 열 때 개발자를 확인할 수 없다고 뜹니다. **악성코드가 아닙니다.** Control-클릭 → 열기, 또는 `xattr -cr "/Applications/Notepad Mac.app"`.
+공증 없음. 처음 열 때 개발자를 확인할 수 없다고 뜹니다. **악성코드가 아닙니다.** Control-클릭 → 열기, 또는 `xattr -cr /Applications/Notepad.app`.
 
 ## 후원
 
@@ -159,14 +159,14 @@ Help → 후원, 또는 WeChat Pay:
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## 라이선스
 
 [LICENSE](LICENSE). 상업용: <https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.de.md": """# Notepad Mac
+    "README.de.md": """# Notepad for macOS
 
 {nav}
 
@@ -193,7 +193,7 @@ Kein IDE. Die Arbeit ist: **öffnen, ändern, sichern, gehen.**
 
 DMG von [Releases](https://github.com/limin640/notepad-mac/releases) nach Programme. Apple Silicon, macOS 11+.
 
-Nicht notarisiert. Der erste Start warnt vor einem unbekannten Entwickler. **Kein Schadsoftware.** Control-Klick → Öffnen, oder `xattr -cr "/Applications/Notepad Mac.app"`.
+Nicht notarisiert. Der erste Start warnt vor einem unbekannten Entwickler. **Kein Schadsoftware.** Control-Klick → Öffnen, oder `xattr -cr /Applications/Notepad.app`.
 
 ## Spenden
 
@@ -205,14 +205,14 @@ Hilfe → Spenden, oder WeChat Pay:
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Lizenz
 
 [LICENSE](LICENSE). Kommerziell: <https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.fr.md": """# Notepad Mac
+    "README.fr.md": """# Notepad for macOS
 
 {nav}
 
@@ -239,7 +239,7 @@ Ce n’est pas un IDE. Le travail : **ouvrir, modifier, enregistrer, partir.**
 
 DMG depuis [Releases](https://github.com/limin640/notepad-mac/releases) vers Applications. Apple silicon, macOS 11+.
 
-Pas de notarisation. Le premier lancement affiche un développeur inconnu. **Ce n’est pas un malware.** Contrôle-clic → Ouvrir, ou `xattr -cr "/Applications/Notepad Mac.app"`.
+Pas de notarisation. Le premier lancement affiche un développeur inconnu. **Ce n’est pas un malware.** Contrôle-clic → Ouvrir, ou `xattr -cr /Applications/Notepad.app`.
 
 ## Don
 
@@ -251,14 +251,14 @@ Aide → Faire un don, ou WeChat Pay :
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Licence
 
 [LICENSE](LICENSE). Commercial : <https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.es.md": """# Notepad Mac
+    "README.es.md": """# Notepad for macOS
 
 {nav}
 
@@ -285,7 +285,7 @@ No es un IDE. El trabajo es **abrir, editar, guardar, irse.**
 
 DMG en [Releases](https://github.com/limin640/notepad-mac/releases), a Aplicaciones. Apple silicon, macOS 11+.
 
-Sin notarización. El primer arranque avisa del desarrollador. **No es malware.** Control-clic → Abrir, o `xattr -cr "/Applications/Notepad Mac.app"`.
+Sin notarización. El primer arranque avisa del desarrollador. **No es malware.** Control-clic → Abrir, o `xattr -cr /Applications/Notepad.app`.
 
 ## Donar
 
@@ -297,14 +297,14 @@ Ayuda → Donar, o WeChat Pay:
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Licencia
 
 [LICENSE](LICENSE). Comercial: <https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.it.md": """# Notepad Mac
+    "README.it.md": """# Notepad for macOS
 
 {nav}
 
@@ -331,7 +331,7 @@ Non è un IDE. Il lavoro è **aprire, modificare, salvare, uscire.**
 
 DMG da [Releases](https://github.com/limin640/notepad-mac/releases) in Applicazioni. Apple silicon, macOS 11+.
 
-Non notarizzato. Al primo avvio il sistema avvisa. **Non è malware.** Control-clic → Apri, oppure `xattr -cr "/Applications/Notepad Mac.app"`.
+Non notarizzato. Al primo avvio il sistema avvisa. **Non è malware.** Control-clic → Apri, oppure `xattr -cr /Applications/Notepad.app`.
 
 ## Dona
 
@@ -343,14 +343,14 @@ Aiuto → Dona, o WeChat Pay:
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Licenza
 
 [LICENSE](LICENSE). Commerciale: <https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.pt-BR.md": """# Notepad Mac
+    "README.pt-BR.md": """# Notepad for macOS
 
 {nav}
 
@@ -377,7 +377,7 @@ Não é uma IDE. O trabalho é **abrir, editar, salvar, sair.**
 
 DMG em [Releases](https://github.com/limin640/notepad-mac/releases), para Aplicativos. Apple silicon, macOS 11+.
 
-Sem notarização. A primeira abertura avisa sobre o desenvolvedor. **Não é malware.** Control-clique → Abrir, ou `xattr -cr "/Applications/Notepad Mac.app"`.
+Sem notarização. A primeira abertura avisa sobre o desenvolvedor. **Não é malware.** Control-clique → Abrir, ou `xattr -cr /Applications/Notepad.app`.
 
 ## Doar
 
@@ -389,14 +389,14 @@ Ajuda → Doar, ou WeChat Pay:
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Licença
 
 [LICENSE](LICENSE). Comercial: <https://github.com/limin640/notepad-mac/issues>
 """,
-    "README.ru.md": """# Notepad Mac
+    "README.ru.md": """# Notepad for macOS
 
 {nav}
 
@@ -423,7 +423,7 @@ open "build/Notepad Mac.app"
 
 DMG из [Releases](https://github.com/limin640/notepad-mac/releases) в Программы. Apple silicon, macOS 11+.
 
-Без нотаризации. При первом запуске система предупредит. **Это не вредонос.** Control-клик → Открыть, или `xattr -cr "/Applications/Notepad Mac.app"`.
+Без нотаризации. При первом запуске система предупредит. **Это не вредонос.** Control-клик → Открыть, или `xattr -cr /Applications/Notepad.app`.
 
 ## Поддержать
 
@@ -435,7 +435,7 @@ DMG из [Releases](https://github.com/limin640/notepad-mac/releases) в Про�
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## Лицензия

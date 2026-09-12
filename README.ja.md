@@ -1,4 +1,4 @@
-# Notepad Mac
+# Notepad for macOS
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
@@ -25,7 +25,7 @@ IDE ではありません。仕事は **開く、直す、保存、終了** で�
 
 [Releases](https://github.com/limin640/notepad-mac/releases) の DMG を Applications へ。Apple シリコン、macOS 11+。
 
-公証なし。初回は「開発元を確認できない」と出ます。**マルウェアではありません。** Control-クリック → 開く、または `xattr -cr "/Applications/Notepad Mac.app"`。
+公証なし。初回は「開発元を確認できない」と出ます。**マルウェアではありません。** Control-クリック → 開く、または `xattr -cr /Applications/Notepad.app`。
 
 ## 寄付
 
@@ -37,7 +37,7 @@ Help → 寄付、または WeChat Pay：
 
 ```bash
 ./build.sh
-open "build/Notepad Mac.app"
+open build/Notepad.app
 ```
 
 ## ライセンス
