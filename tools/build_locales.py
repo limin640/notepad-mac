@@ -12,8 +12,8 @@ OUT = ROOT / "macapp/locale"
 ZH_HANT = {
     "File": "檔案", "Edit": "編輯", "Search": "搜尋", "View": "檢視",
     "Scheme": "配置", "Settings": "設定", "Tools": "工具", "Help": "說明",
-    "About Notepad4": "關於 Notepad4", "Hide Notepad4": "隱藏 Notepad4",
-    "Hide Others": "隱藏其他", "Show All": "全部顯示", "Quit Notepad4": "結束 Notepad4",
+    "About Notepad Mac": "關於 Notepad4", "Hide Notepad Mac": "隱藏 Notepad4",
+    "Hide Others": "隱藏其他", "Show All": "全部顯示", "Quit Notepad Mac": "結束 Notepad4",
     "New": "新增", "New Window": "新增視窗", "Open...": "開啟...", "Save": "儲存",
     "Save As...": "另存為...", "Save Backup": "儲存備份", "Save Copy...": "儲存複本...",
     "File Mode": "檔案模式", "Read Only File": "唯讀檔案", "Read Only Mode": "唯讀模式",
@@ -64,7 +64,7 @@ ZH_HANT = {
     "Appearance": "外觀", "Show Menu": "顯示功能表列", "Show Toolbar": "顯示工具列",
     "Show Statusbar": "顯示狀態列", "Save Settings On Exit": "結束時儲存設定",
     "Save Settings Now": "立即儲存設定", "Language": "語言", "Donate": "贊助",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "如果這個 macOS 版 Notepad4 對你有用，歡迎用微信支付贊助。",
     "See the project homepage for the donation QR code.": "收款碼見專案首頁。",
     "Execute Document": "執行文件", "Open Document With...": "用其他程式開啟...",
@@ -93,7 +93,7 @@ ZH_HANT = {
     "Add to Favorites": "加入我的最愛", "No favorites": "（無我的最愛）",
     "No recent files": "（無最近檔案）", "Properties": "內容",
     "Failed to save backup": "儲存備份失敗", "Untitled": "未命名",
-    " - Notepad4": " - Notepad4", " — Modified": " — 已修改",
+    " - Notepad Mac": " - Notepad Mac", " — Modified": " — 已修改",
     "Cannot decode file content": "無法解碼檔案內容",
     "Failed to write with current encoding": "無法以目前編碼寫出",
     "Fold": "摺疊", "Toggle Current Fold": "摺疊/展開目前區塊", "Fold All": "全部摺疊",
@@ -174,8 +174,8 @@ ZH_HANT = {
 JA = {
     "File": "ファイル", "Edit": "編集", "Search": "検索", "View": "表示",
     "Scheme": "スキーム", "Settings": "設定", "Tools": "ツール", "Help": "ヘルプ",
-    "About Notepad4": "Notepad4 について", "Hide Notepad4": "Notepad4 を隠す",
-    "Hide Others": "ほかを隠す", "Show All": "すべてを表示", "Quit Notepad4": "Notepad4 を終了",
+    "About Notepad Mac": "Notepad4 について", "Hide Notepad Mac": "Notepad4 を隠す",
+    "Hide Others": "ほかを隠す", "Show All": "すべてを表示", "Quit Notepad Mac": "Notepad4 を終了",
     "New": "新規", "New Window": "新規ウインドウ", "Open...": "開く...", "Save": "保存",
     "Save As...": "別名で保存...", "Save Backup": "バックアップを保存",
     "Save Copy...": "コピーを保存...", "File Mode": "ファイルモード",
@@ -225,7 +225,7 @@ JA = {
     "Show Menu": "メニューを表示", "Show Toolbar": "ツールバーを表示",
     "Show Statusbar": "ステータスバーを表示", "Save Settings On Exit": "終了時に設定を保存",
     "Save Settings Now": "今すぐ設定を保存", "Language": "言語", "Donate": "寄付",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "macOS 版 Notepad4 が役に立ったら、WeChat Pay で寄付できます。",
     "See the project homepage for the donation QR code.": "寄付用 QR はプロジェクトページにあります。",
     "Execute Document": "書類を実行", "Open Document With...": "ほかのアプリで開く...",
@@ -275,8 +275,8 @@ JA = {
 KO = {
     "File": "파일", "Edit": "편집", "Search": "검색", "View": "보기",
     "Scheme": "구성표", "Settings": "설정", "Tools": "도구", "Help": "도움말",
-    "About Notepad4": "Notepad4 정보", "Hide Notepad4": "Notepad4 가리기",
-    "Hide Others": "다른 항목 가리기", "Show All": "모두 보기", "Quit Notepad4": "Notepad4 종료",
+    "About Notepad Mac": "Notepad4 정보", "Hide Notepad Mac": "Notepad4 가리기",
+    "Hide Others": "다른 항목 가리기", "Show All": "모두 보기", "Quit Notepad Mac": "Notepad4 종료",
     "New": "새로 만들기", "New Window": "새 윈도우", "Open...": "열기...", "Save": "저장",
     "Save As...": "다른 이름으로 저장...", "Save Backup": "백업 저장", "Save Copy...": "복사본 저장...",
     "File Mode": "파일 모드", "Read Only File": "읽기 전용 파일", "Read Only Mode": "읽기 전용 모드",
@@ -292,7 +292,7 @@ KO = {
     "Empty document": "빈 문서", "Line Numbers": "줄 번호", "Zoom": "확대/축소",
     "Zoom In": "확대", "Zoom Out": "축소", "Follow System": "시스템 따르기",
     "Light": "라이트", "Dark": "다크", "Language": "언어", "Donate": "후원",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "macOS용 Notepad4가 도움이 되었다면 WeChat Pay로 후원할 수 있습니다.",
     "Project Home": "프로젝트 홈",
     "Ln %@ / %@": "줄 %@ / %@", "Col %@ / %@": "열 %@ / %@", "Ch %@ / %@": "문자 %@ / %@",
@@ -306,8 +306,8 @@ KO = {
 DE = {
     "File": "Ablage", "Edit": "Bearbeiten", "Search": "Suchen", "View": "Darstellung",
     "Scheme": "Schema", "Settings": "Einstellungen", "Tools": "Werkzeuge", "Help": "Hilfe",
-    "About Notepad4": "Über Notepad4", "Hide Notepad4": "Notepad4 ausblenden",
-    "Hide Others": "Andere ausblenden", "Show All": "Alle einblenden", "Quit Notepad4": "Notepad4 beenden",
+    "About Notepad Mac": "Über Notepad4", "Hide Notepad Mac": "Notepad4 ausblenden",
+    "Hide Others": "Andere ausblenden", "Show All": "Alle einblenden", "Quit Notepad Mac": "Notepad4 beenden",
     "New": "Neu", "New Window": "Neues Fenster", "Open...": "Öffnen ...", "Save": "Sichern",
     "Save As...": "Sichern unter ...", "Save Backup": "Sicherungskopie", "Save Copy...": "Kopie sichern ...",
     "File Mode": "Dateimodus", "Read Only File": "Schreibgeschützte Datei", "Read Only Mode": "Nur-Lesen-Modus",
@@ -324,7 +324,7 @@ DE = {
     "Empty document": "Leeres Dokument", "Line Numbers": "Zeilennummern",
     "Zoom": "Zoom", "Zoom In": "Vergrößern", "Zoom Out": "Verkleinern", "Follow System": "System folgen",
     "Light": "Hell", "Dark": "Dunkel", "Language": "Sprache", "Donate": "Spenden",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "Wenn Notepad4 für macOS nützlich ist, kannst du per WeChat Pay spenden.",
     "See the project homepage for the donation QR code.": "QR-Code auf der Projektseite.",
     "Project Home": "Projektseite",
@@ -342,8 +342,8 @@ DE = {
 FR = {
     "File": "Fichier", "Edit": "Édition", "Search": "Recherche", "View": "Présentation",
     "Scheme": "Schéma", "Settings": "Réglages", "Tools": "Outils", "Help": "Aide",
-    "About Notepad4": "À propos de Notepad4", "Hide Notepad4": "Masquer Notepad4",
-    "Hide Others": "Masquer les autres", "Show All": "Tout afficher", "Quit Notepad4": "Quitter Notepad4",
+    "About Notepad Mac": "À propos de Notepad4", "Hide Notepad Mac": "Masquer Notepad4",
+    "Hide Others": "Masquer les autres", "Show All": "Tout afficher", "Quit Notepad Mac": "Quitter Notepad4",
     "New": "Nouveau", "New Window": "Nouvelle fenêtre", "Open...": "Ouvrir...", "Save": "Enregistrer",
     "Save As...": "Enregistrer sous...", "Save Backup": "Enregistrer une sauvegarde",
     "Save Copy...": "Enregistrer une copie...", "File Mode": "Mode fichier",
@@ -360,7 +360,7 @@ FR = {
     "Empty document": "Document vide", "Line Numbers": "Numéros de ligne",
     "Zoom In": "Zoom avant", "Zoom Out": "Zoom arrière", "Follow System": "Suivre le système",
     "Light": "Clair", "Dark": "Sombre", "Language": "Langue", "Donate": "Faire un don",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "Si Notepad4 pour macOS vous est utile, vous pouvez donner via WeChat Pay.",
     "Project Home": "Page du projet",
     "Ln %@ / %@": "Lig %@ / %@", "Col %@ / %@": "Col %@ / %@", "Ch %@ / %@": "Car %@ / %@",
@@ -377,8 +377,8 @@ FR = {
 ES = {
     "File": "Archivo", "Edit": "Edición", "Search": "Buscar", "View": "Visualización",
     "Scheme": "Esquema", "Settings": "Ajustes", "Tools": "Herramientas", "Help": "Ayuda",
-    "About Notepad4": "Acerca de Notepad4", "Hide Notepad4": "Ocultar Notepad4",
-    "Hide Others": "Ocultar otros", "Show All": "Mostrar todo", "Quit Notepad4": "Salir de Notepad4",
+    "About Notepad Mac": "Acerca de Notepad4", "Hide Notepad Mac": "Ocultar Notepad4",
+    "Hide Others": "Ocultar otros", "Show All": "Mostrar todo", "Quit Notepad Mac": "Salir de Notepad4",
     "New": "Nuevo", "New Window": "Nueva ventana", "Open...": "Abrir...", "Save": "Guardar",
     "Save As...": "Guardar como...", "Save Backup": "Guardar copia de seguridad",
     "Save Copy...": "Guardar una copia...", "File Mode": "Modo de archivo",
@@ -396,7 +396,7 @@ ES = {
     "Empty document": "Documento vacío", "Line Numbers": "Números de línea",
     "Zoom In": "Acercar", "Zoom Out": "Alejar", "Follow System": "Seguir el sistema",
     "Light": "Claro", "Dark": "Oscuro", "Language": "Idioma", "Donate": "Donar",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "Si Notepad4 para macOS te resulta útil, puedes donar con WeChat Pay.",
     "Project Home": "Página del proyecto",
     "Ln %@ / %@": "Lín %@ / %@", "Col %@ / %@": "Col %@ / %@", "Ch %@ / %@": "Car %@ / %@",
@@ -413,8 +413,8 @@ ES = {
 IT = {
     "File": "Archivio", "Edit": "Modifica", "Search": "Cerca", "View": "Vista",
     "Scheme": "Schema", "Settings": "Impostazioni", "Tools": "Strumenti", "Help": "Aiuto",
-    "About Notepad4": "Informazioni su Notepad4", "Hide Notepad4": "Nascondi Notepad4",
-    "Hide Others": "Nascondi altre", "Show All": "Mostra tutte", "Quit Notepad4": "Esci da Notepad4",
+    "About Notepad Mac": "Informazioni su Notepad4", "Hide Notepad Mac": "Nascondi Notepad4",
+    "Hide Others": "Nascondi altre", "Show All": "Mostra tutte", "Quit Notepad Mac": "Esci da Notepad4",
     "New": "Nuovo", "New Window": "Nuova finestra", "Open...": "Apri...", "Save": "Salva",
     "Save As...": "Salva con nome...", "Save Backup": "Salva backup", "Save Copy...": "Salva una copia...",
     "Reload": "Ricarica", "Encoding": "Codifica", "Line Endings": "Fine riga",
@@ -429,7 +429,7 @@ IT = {
     "Empty document": "Documento vuoto", "Line Numbers": "Numeri di riga",
     "Zoom In": "Ingrandisci", "Zoom Out": "Riduci", "Follow System": "Segui sistema",
     "Light": "Chiaro", "Dark": "Scuro", "Language": "Lingua", "Donate": "Dona",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "Se Notepad4 per macOS ti è utile, puoi donare con WeChat Pay.",
     "Project Home": "Pagina del progetto",
     "Ln %@ / %@": "Rig %@ / %@", "Col %@ / %@": "Col %@ / %@", "Ch %@ / %@": "Car %@ / %@",
@@ -446,8 +446,8 @@ IT = {
 PT = {
     "File": "Arquivo", "Edit": "Editar", "Search": "Buscar", "View": "Visualizar",
     "Scheme": "Esquema", "Settings": "Ajustes", "Tools": "Ferramentas", "Help": "Ajuda",
-    "About Notepad4": "Sobre o Notepad4", "Hide Notepad4": "Ocultar Notepad4",
-    "Hide Others": "Ocultar outros", "Show All": "Mostrar todos", "Quit Notepad4": "Encerrar Notepad4",
+    "About Notepad Mac": "Sobre o Notepad4", "Hide Notepad Mac": "Ocultar Notepad4",
+    "Hide Others": "Ocultar outros", "Show All": "Mostrar todos", "Quit Notepad Mac": "Encerrar Notepad4",
     "New": "Novo", "New Window": "Nova janela", "Open...": "Abrir...", "Save": "Salvar",
     "Save As...": "Salvar como...", "Save Backup": "Salvar backup", "Save Copy...": "Salvar uma cópia...",
     "Reload": "Recarregar", "Encoding": "Codificação", "Line Endings": "Finais de linha",
@@ -462,7 +462,7 @@ PT = {
     "Empty document": "Documento vazio", "Line Numbers": "Números de linha",
     "Zoom In": "Ampliar", "Zoom Out": "Reduzir", "Follow System": "Seguir o sistema",
     "Light": "Claro", "Dark": "Escuro", "Language": "Idioma", "Donate": "Doar",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "Se o Notepad4 para macOS for útil, você pode doar via WeChat Pay.",
     "Project Home": "Página do projeto",
     "Ln %@ / %@": "Lin %@ / %@", "Col %@ / %@": "Col %@ / %@", "Ch %@ / %@": "Car %@ / %@",
@@ -479,8 +479,8 @@ PT = {
 RU = {
     "File": "Файл", "Edit": "Правка", "Search": "Поиск", "View": "Вид",
     "Scheme": "Схема", "Settings": "Настройки", "Tools": "Инструменты", "Help": "Справка",
-    "About Notepad4": "О программе Notepad4", "Hide Notepad4": "Скрыть Notepad4",
-    "Hide Others": "Скрыть остальные", "Show All": "Показать все", "Quit Notepad4": "Завершить Notepad4",
+    "About Notepad Mac": "О программе Notepad4", "Hide Notepad Mac": "Скрыть Notepad4",
+    "Hide Others": "Скрыть остальные", "Show All": "Показать все", "Quit Notepad Mac": "Завершить Notepad4",
     "New": "Новый", "New Window": "Новое окно", "Open...": "Открыть...", "Save": "Сохранить",
     "Save As...": "Сохранить как...", "Save Backup": "Сохранить резервную копию",
     "Save Copy...": "Сохранить копию...", "File Mode": "Режим файла",
@@ -498,7 +498,7 @@ RU = {
     "Empty document": "Пустой документ", "Line Numbers": "Номера строк",
     "Zoom In": "Увеличить", "Zoom Out": "Уменьшить", "Follow System": "Как в системе",
     "Light": "Светлая", "Dark": "Тёмная", "Language": "Язык", "Donate": "Поддержать",
-    "If you find Notepad4 for macOS useful, you can donate via WeChat Pay.":
+    "If you find Notepad Mac useful, you can donate via WeChat Pay.":
         "Если Notepad4 для macOS полезен, можно поддержать через WeChat Pay.",
     "Project Home": "Страница проекта",
     "Ln %@ / %@": "Стр %@ / %@", "Col %@ / %@": "Стл %@ / %@", "Ch %@ / %@": "Сим %@ / %@",

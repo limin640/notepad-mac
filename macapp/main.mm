@@ -1325,7 +1325,7 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				[controller performSelector:@selector(settingsSaveNow)];
 				ok(@"settingsSaveNow headless", YES);
 				ok(@"project home url",
-					[[controller projectHomeURL] isEqualToString:@"https://github.com/limin640/notepad4-mac"]);
+					[[controller projectHomeURL] isEqualToString:@"https://github.com/limin640/notepad-mac"]);
 				[controller performSelector:@selector(helpHome)];
 				ok(@"helpHome headless no open", YES);
 			}

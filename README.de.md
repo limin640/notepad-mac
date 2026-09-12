@@ -1,4 +1,4 @@
-# Notepad4 for macOS
+# Notepad Mac
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | **Deutsch** | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
@@ -23,9 +23,9 @@ Kein IDE. Die Arbeit ist: **öffnen, ändern, sichern, gehen.**
 
 ## Download
 
-DMG von [Releases](https://github.com/limin640/notepad4-mac/releases) nach Programme. Apple Silicon, macOS 11+.
+DMG von [Releases](https://github.com/limin640/notepad-mac/releases) nach Programme. Apple Silicon, macOS 11+.
 
-Nicht notarisiert. Der erste Start warnt vor einem unbekannten Entwickler. **Kein Schadsoftware.** Control-Klick → Öffnen, oder `xattr -cr /Applications/Notepad4.app`.
+Nicht notarisiert. Der erste Start warnt vor einem unbekannten Entwickler. **Kein Schadsoftware.** Control-Klick → Öffnen, oder `xattr -cr "/Applications/Notepad Mac.app"`.
 
 ## Spenden
 
@@ -37,9 +37,9 @@ Hilfe → Spenden, oder WeChat Pay:
 
 ```bash
 ./build.sh
-open build/Notepad4.app
+open "build/Notepad Mac.app"
 ```
 
 ## Lizenz
 
-[LICENSE](LICENSE). Kommerziell: <https://github.com/limin640/notepad4-mac/issues>
+[LICENSE](LICENSE). Kommerziell: <https://github.com/limin640/notepad-mac/issues>

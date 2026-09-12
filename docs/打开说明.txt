@@ -1,17 +1,17 @@
-Notepad4 for macOS — 第一次打开
+Notepad Mac — 第一次打开
 
 本软件没有经过 Apple 公证。从网上下载后，系统会提示「无法验证开发者」，这是正常的，不是病毒。
 
 任选一种方式即可，只需做一次，以后双击就能开：
 
-1. 把 Notepad4 拖到「应用程序」
+1. 把 Notepad Mac 拖到「应用程序」
    按住 Control 点图标（或右键）→ 打开 → 再点打开
 
 2. 若仍被拦：系统设置 → 隐私与安全性 → 往下滚 → 点「仍要打开」
 
 3. 或在「终端」执行（把 App 拖进终端可自动填路径）：
-   xattr -cr /Applications/Notepad4.app
+   xattr -cr "/Applications/Notepad Mac.app"
 
 当前安装包只支持 Apple 芯片（M1/M2/M3/M4）。Intel Mac 请自行从源码编译。
 
-项目主页：https://github.com/limin640/notepad4-mac
+项目主页：https://github.com/limin640/notepad-mac

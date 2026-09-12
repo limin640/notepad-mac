@@ -64,7 +64,7 @@ add_executable(sci_test tests/sci_test.mm)
 target_link_libraries(sci_test PRIVATE scintilla)
 
 # ---------------------------------------------------------------------------
-# 目标 2：Notepad4.app（AppKit 壳）
+# 目标 2：Notepad Mac.app（AppKit 壳；CMake 目标名仍为 Notepad4）
 # ---------------------------------------------------------------------------
 add_executable(Notepad4 MACOSX_BUNDLE
     macapp/main.mm
@@ -96,13 +96,14 @@ target_include_directories(Notepad4 PRIVATE
 find_library(WEBKIT_F WebKit REQUIRED)
 target_link_libraries(Notepad4 PRIVATE scintilla lexers_def ${WEBKIT_F})
 set_target_properties(Notepad4 PROPERTIES
-    MACOSX_BUNDLE_BUNDLE_NAME "Notepad4"
+    OUTPUT_NAME "Notepad Mac"
+    MACOSX_BUNDLE_BUNDLE_NAME "Notepad Mac"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.limin640.notepad4mac"
-    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.19"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.19"
-    MACOSX_BUNDLE_INFO_STRING "Notepad4 for macOS"
+    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.20"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.20"
+    MACOSX_BUNDLE_INFO_STRING "Notepad Mac"
     MACOSX_BUNDLE_ICON_FILE "Notepad4.icns"
-    MACOSX_BUNDLE_LONG_VERSION_STRING "0.1.19"
+    MACOSX_BUNDLE_LONG_VERSION_STRING "0.1.20"
     MACOSX_BUNDLE_COPYRIGHT "Copyright © 2026 limin640. Personal/non-commercial use; commercial use requires a license."
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/macapp/Info.plist"
 )

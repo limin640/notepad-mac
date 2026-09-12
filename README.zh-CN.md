@@ -1,12 +1,12 @@
-# Notepad4 for macOS
+# Notepad Mac
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
 **4 MB。原生。开箱即写。**
 
-Windows 上那个又快又瘦的 [Notepad4](https://github.com/zufuliu/notepad4)，第一次有真正的 Mac 版：Scintilla 内核 + 官方 Cocoa 后端 + AppKit 壳。不是 Wine 套一层 Windows，不是 Electron 再塞一个浏览器。
+Mac 上的原生记事本：Scintilla 内核 + 官方 Cocoa 后端 + AppKit 壳。不是 Wine，不是 Electron。大约 **4 MB**。
 
-macOS 自带文本编辑太素，VS Code / Cursor 开机先喝掉半杯内存，CotEditor 好看但不是 Notepad4。这个仓库走第三条路——**把 Notepad4 原封搬上 Mac，体积还是 4 MB 量级。**
+内核来自 Windows [Notepad4](https://github.com/zufuliu/notepad4)——词法器、配色、手感都还在——名字改成大家会搜的 **Notepad Mac**。
 
 Wine 封装大约 1 GB。这边大约 **4 MB**。差两个数量级。
 
@@ -21,17 +21,17 @@ Wine 封装大约 1 GB。这边大约 **4 MB**。差两个数量级。
 - **该预览时预览。** Markdown、HTML、图片直接在窗口右侧渲染，不用另开浏览器。
 - **11 种界面语言，跟随系统。** 简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Italiano、Português、Русский。
 
-不做什么也说清楚：它不是 IDE，没有调试器、没有 Git 面板、没有 AI 侧栏。那是 VS Code 的活。Notepad4 的活是——**打开文件、改几个字、存盘、走人。**
+不做什么也说清楚：它不是 IDE，没有调试器、没有 Git 面板、没有 AI 侧栏。那是 VS Code 的活。这个软件的活是——**打开文件、改几个字、存盘、走人。**
 
 ## 下载
 
-从 [Releases](https://github.com/limin640/notepad4-mac/releases) 下 DMG，拖进「应用程序」。Apple 芯片（M1 及更新），macOS 11+。
+从 [Releases](https://github.com/limin640/notepad-mac/releases) 下 DMG，把 **Notepad Mac** 拖进「应用程序」。Apple 芯片（M1 及更新），macOS 11+。
 
 没有 Apple 公证。网上第一次打开会提示「无法验证开发者」，**不是病毒**。任选一次即可：
 
 1. **按住 Control 点图标**（或右键）→ 打开 → 再点打开
 2. 系统设置 → 隐私与安全性 → 「仍要打开」
-3. 终端：`xattr -cr /Applications/Notepad4.app`
+3. 终端：`xattr -cr "/Applications/Notepad Mac.app"`
 
 以后双击就能开。Intel Mac 请从源码编译。
 
@@ -59,7 +59,7 @@ Wine 封装大约 1 GB。这边大约 **4 MB**。差两个数量级。
 
 ```bash
 ./build.sh
-open build/Notepad4.app
+open "build/Notepad Mac.app"
 ```
 
 macOS 11+，Xcode（clang C++20），CMake ≥ 3.20。默认 arm64。
@@ -90,4 +90,4 @@ Windows 上的 SRWLock / 线程池 / 编码 API，在这边换成标准库和 CF
 - **Scintilla**：历史许可（Neil Hodgson）。
 - **Boost.Regex 头文件**：Boost Software License 1.0。
 
-商业授权：<https://github.com/limin640/notepad4-mac/issues>
+商业授权：<https://github.com/limin640/notepad-mac/issues>

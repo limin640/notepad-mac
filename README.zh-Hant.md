@@ -1,4 +1,4 @@
-# Notepad4 for macOS
+# Notepad Mac
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文** | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
@@ -25,9 +25,9 @@ Wine 封裝大約 1 GB。這邊大約 **4 MB**。差兩個數量級。
 
 ## 下載
 
-從 [Releases](https://github.com/limin640/notepad4-mac/releases) 下載 DMG，拖進「應用程式」。Apple 晶片，macOS 11+。
+從 [Releases](https://github.com/limin640/notepad-mac/releases) 下載 DMG，拖進「應用程式」。Apple 晶片，macOS 11+。
 
-沒有 Apple 公證。第一次從網路上打開會被攔住，**不是病毒**。任選一次：Control-點擊 → 打開；或系統設定 → 隱私權與安全性 → 仍要打開；或 `xattr -cr /Applications/Notepad4.app`。
+沒有 Apple 公證。第一次從網路上打開會被攔住，**不是病毒**。任選一次：Control-點擊 → 打開；或系統設定 → 隱私權與安全性 → 仍要打開；或 `xattr -cr "/Applications/Notepad Mac.app"`。
 
 ## 贊助
 
@@ -39,9 +39,9 @@ Help → 贊助，或掃 WeChat Pay：
 
 ```bash
 ./build.sh
-open build/Notepad4.app
+open "build/Notepad Mac.app"
 ```
 
 ## 授權
 
-見 [LICENSE](LICENSE)。個人自用可以，本移植商業使用需授權：<https://github.com/limin640/notepad4-mac/issues>
+見 [LICENSE](LICENSE)。個人自用可以，本移植商業使用需授權：<https://github.com/limin640/notepad-mac/issues>

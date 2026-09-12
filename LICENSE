@@ -1,5 +1,5 @@
-Notepad4-mac 许可说明
-====================
+Notepad Mac 许可说明（Notepad4 的 macOS 移植）
+==========================================
 
 本仓库包含两类代码，许可不同。请整份阅读，不要只看一句摘要。
 
@@ -16,10 +16,10 @@ Notepad4-mac 许可说明
 允许：个人学习、自用、非商业分发与修改。
 
 不允许（除非另行取得书面授权）：把上述原创代码或基于它的
-Notepad4-mac 应用用于商业产品、收费分发、商业服务或其它商业目的。
+Notepad Mac 应用用于商业产品、收费分发、商业服务或其它商业目的。
 
 商业授权请通过 GitHub Issues 联系：
-https://github.com/limin640/notepad4-mac/issues
+https://github.com/limin640/notepad-mac/issues
 
 
 2. 上游代码（必须保留原许可，不能改成「禁止商业」）

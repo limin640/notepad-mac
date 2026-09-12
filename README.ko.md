@@ -1,4 +1,4 @@
-# Notepad4 for macOS
+# Notepad Mac
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md)
 
@@ -23,9 +23,9 @@ IDE가 아닙니다. 할 일은 **열고, 고치고, 저장하고, 나가는 것
 
 ## 다운로드
 
-[Releases](https://github.com/limin640/notepad4-mac/releases)의 DMG를 응용 프로그램으로. Apple 실리콘, macOS 11+.
+[Releases](https://github.com/limin640/notepad-mac/releases)의 DMG를 응용 프로그램으로. Apple 실리콘, macOS 11+.
 
-공증 없음. 처음 열 때 개발자를 확인할 수 없다고 뜹니다. **악성코드가 아닙니다.** Control-클릭 → 열기, 또는 `xattr -cr /Applications/Notepad4.app`.
+공증 없음. 처음 열 때 개발자를 확인할 수 없다고 뜹니다. **악성코드가 아닙니다.** Control-클릭 → 열기, 또는 `xattr -cr "/Applications/Notepad Mac.app"`.
 
 ## 후원
 
@@ -37,9 +37,9 @@ Help → 후원, 또는 WeChat Pay:
 
 ```bash
 ./build.sh
-open build/Notepad4.app
+open "build/Notepad Mac.app"
 ```
 
 ## 라이선스
 
-[LICENSE](LICENSE). 상업용: <https://github.com/limin640/notepad4-mac/issues>
+[LICENSE](LICENSE). 상업용: <https://github.com/limin640/notepad-mac/issues>

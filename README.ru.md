@@ -1,4 +1,4 @@
-# Notepad4 for macOS
+# Notepad Mac
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | **Русский**
 
@@ -23,9 +23,9 @@
 
 ## Загрузка
 
-DMG из [Releases](https://github.com/limin640/notepad4-mac/releases) в Программы. Apple silicon, macOS 11+.
+DMG из [Releases](https://github.com/limin640/notepad-mac/releases) в Программы. Apple silicon, macOS 11+.
 
-Без нотаризации. При первом запуске система предупредит. **Это не вредонос.** Control-клик → Открыть, или `xattr -cr /Applications/Notepad4.app`.
+Без нотаризации. При первом запуске система предупредит. **Это не вредонос.** Control-клик → Открыть, или `xattr -cr "/Applications/Notepad Mac.app"`.
 
 ## Поддержать
 
@@ -37,9 +37,9 @@ DMG из [Releases](https://github.com/limin640/notepad4-mac/releases) в Про
 
 ```bash
 ./build.sh
-open build/Notepad4.app
+open "build/Notepad Mac.app"
 ```
 
 ## Лицензия
 
-[LICENSE](LICENSE). Коммерция: <https://github.com/limin640/notepad4-mac/issues>
+[LICENSE](LICENSE). Коммерция: <https://github.com/limin640/notepad-mac/issues>

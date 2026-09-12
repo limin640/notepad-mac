@@ -1,18 +1,19 @@
 #!/bin/bash
-# 构建 Notepad4.app，打 DMG。
+# 构建 Notepad Mac.app，打 DMG。
 # 有 Developer ID Application 证书时：hardened runtime 签名，并可公证。
 # 否则：ad-hoc 签名，只适合本机或「右键打开」。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION=$(sed -n 's/.*MACOSX_BUNDLE_SHORT_VERSION_STRING "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)
-VERSION=${VERSION:-0.1.19}
-APP_NAME="Notepad4"
+VERSION=${VERSION:-0.1.20}
+APP_NAME="Notepad Mac"
 BUNDLE_ID="com.limin640.notepad4mac"
+DMG_NAME="Notepad-Mac"
 ENTITLEMENTS="macapp/Notepad4.entitlements"
 DIST="dist"
 APP="$DIST/${APP_NAME}.app"
-DMG="$DIST/${APP_NAME}-${VERSION}.dmg"
+DMG="$DIST/${DMG_NAME}-${VERSION}.dmg"
 notary_profile="${APP_PASSWORD_KEYCHAIN:-notarytool-password}"
 require_notarization="${REQUIRE_NOTARIZATION:-0}"
 

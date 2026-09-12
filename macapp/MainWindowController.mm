@@ -446,7 +446,7 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 		styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
 			   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
 		backing:NSBackingStoreBuffered defer:NO];
-	win.title = [NPL(@"Untitled") stringByAppendingString:@" - Notepad4"];
+	win.title = [NPL(@"Untitled") stringByAppendingString:@" - Notepad Mac"];
 	win.minSize = NSMakeSize(400, 280);
 	// chrome 跟随系统外观（暗色系统 → 暗色工具栏/状态栏）
 	self = [super initWithWindow:win];
@@ -711,15 +711,15 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 	NSMenu *mb = [[NSMenu alloc] init];
 
 	// App 菜单（macOS 必需）
-	NSMenuItem *appItem = [mb addItemWithTitle:NPL(@"Notepad4") action:nil keyEquivalent:@""];
+	NSMenuItem *appItem = [mb addItemWithTitle:NPL(@"Notepad Mac") action:nil keyEquivalent:@""];
 	NSMenu *appMenu = M(NPL(@""));
-	[appMenu addItemWithTitle:NPL(@"About Notepad4") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+	[appMenu addItemWithTitle:NPL(@"About Notepad Mac") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
 	MSep(appMenu);
-	[appMenu addItemWithTitle:NPL(@"Hide Notepad4") action:@selector(hide:) keyEquivalent:@"h"];
+	[appMenu addItemWithTitle:NPL(@"Hide Notepad Mac") action:@selector(hide:) keyEquivalent:@"h"];
 	[appMenu addItemWithTitle:NPL(@"Hide Others") action:@selector(hideOtherApplications:) keyEquivalent:@"h"].keyEquivalentModifierMask = NSEventModifierFlagCommand|NSEventModifierFlagOption;
 	[appMenu addItemWithTitle:NPL(@"Show All") action:@selector(unhideAllApplications:) keyEquivalent:@""];
 	MSep(appMenu);
-	[appMenu addItemWithTitle:NPL(@"Quit Notepad4") action:@selector(terminate:) keyEquivalent:@"q"];
+	[appMenu addItemWithTitle:NPL(@"Quit Notepad Mac") action:@selector(terminate:) keyEquivalent:@"q"];
 	appItem.submenu = appMenu;
 
 	NSString *F2 = Fn(NSF2FunctionKey);
@@ -1163,7 +1163,7 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 	NSMenu *help = M(NPL(@"Help"));
 	MI(help, NPL(@"Project Home"), @selector(helpHome), @"", 0);
 	MI(help, NPL(@"Donate"), @selector(helpDonate), @"", 0);
-	MI(help, NPL(@"About Notepad4"), @selector(orderFrontStandardAboutPanel:), @"", 0);
+	MI(help, NPL(@"About Notepad Mac"), @selector(orderFrontStandardAboutPanel:), @"", 0);
 	{ NSMenuItem *_it_help = [mb addItemWithTitle:NPL(@"Help") action:nil keyEquivalent:@""]; _it_help.submenu = help; }
 
 	_inWindowMenus = [NSMutableArray arrayWithObjects:file, edit, search, view, scheme, settings, tools, help, nil];
@@ -1174,20 +1174,20 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 }
 
 - (NSMenu *)buildAppMenu {
-	NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Notepad4"];
-	[appMenu addItemWithTitle:NPL(@"About Notepad4") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+	NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Notepad Mac"];
+	[appMenu addItemWithTitle:NPL(@"About Notepad Mac") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
 	[appMenu addItem:[NSMenuItem separatorItem]];
 	NSMenuItem *svc = [appMenu addItemWithTitle:NPL(@"Services") action:nil keyEquivalent:@""];
 	NSMenu *svcMenu = [[NSMenu alloc] initWithTitle:NPL(@"Services")];
 	svc.submenu = svcMenu;
 	NSApp.servicesMenu = svcMenu;
 	[appMenu addItem:[NSMenuItem separatorItem]];
-	[appMenu addItemWithTitle:NPL(@"Hide Notepad4") action:@selector(hide:) keyEquivalent:@"h"];
+	[appMenu addItemWithTitle:NPL(@"Hide Notepad Mac") action:@selector(hide:) keyEquivalent:@"h"];
 	NSMenuItem *ho = [appMenu addItemWithTitle:NPL(@"Hide Others") action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
 	ho.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
 	[appMenu addItemWithTitle:NPL(@"Show All") action:@selector(unhideAllApplications:) keyEquivalent:@""];
 	[appMenu addItem:[NSMenuItem separatorItem]];
-	[appMenu addItemWithTitle:NPL(@"Quit Notepad4") action:@selector(terminate:) keyEquivalent:@"q"];
+	[appMenu addItemWithTitle:NPL(@"Quit Notepad Mac") action:@selector(terminate:) keyEquivalent:@"q"];
 	NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
 	item.submenu = appMenu;
 	NSMenu *main = [[NSMenu alloc] initWithTitle:@""];
@@ -1795,7 +1795,7 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	} else {
 		[t appendString:NPL(@"Untitled")];
 	}
-	[t appendString:@" - Notepad4"];
+	[t appendString:@" - Notepad Mac"];
 	self.window.title = t;
 }
 
@@ -3279,7 +3279,7 @@ static NSColor *NPColorFromBGR(long v) {
 	if (s) [_document.editor message:SCI_REPLACESEL wParam:0 lParam:(sptr_t)s.UTF8String];
 }
 - (NSString *)projectHomeURL {
-	return @"https://github.com/limin640/notepad4-mac";
+	return @"https://github.com/limin640/notepad-mac";
 }
 - (void)helpHome {
 	if ([self runningHeadless]) return;
@@ -3295,7 +3295,7 @@ static NSColor *NPColorFromBGR(long v) {
 		if (path) qr = [[NSImage alloc] initWithContentsOfFile:path];
 	}
 	if (qr) {
-		a.informativeText = NPL(@"If you find Notepad4 for macOS useful, you can donate via WeChat Pay.");
+		a.informativeText = NPL(@"If you find Notepad Mac useful, you can donate via WeChat Pay.");
 		NSImageView *iv = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 240, 240)];
 		iv.image = qr;
 		iv.imageScaling = NSImageScaleProportionallyUpOrDown;
