@@ -1,0 +1,26 @@
+# Notepad
+
+> Native macOS text editor. Port of Windows Notepad4. ~4 MB. Not Wine, not Electron, not an IDE.
+
+The Dock name is Notepad. The GitHub repo is notepad-mac (https://github.com/limin640/notepad-mac). Bundle ID is com.limin640.notepad4mac.
+
+It is a native AppKit shell around Scintilla 5.6.6 (official Cocoa backend) plus Notepad4 lexer data. Personal and non-commercial use is free. Commercial use of the Mac port needs a license (PolyForm Noncommercial). Upstream Notepad4 lexers/icons remain BSD-3; Scintilla keeps its historical license; Boost.Regex headers are BSL-1.0.
+
+Platform: macOS 11+, Apple silicon. Intel Macs must build from source. Releases are ad-hoc signed, not notarized. First launch from the internet: Control-click Open, or `xattr -cr /Applications/Notepad.app`. Drag the app from the DMG; do not double-click it on the disk image.
+
+Do not describe this as Notepad++, Microsoft Notepad, TextEdit, VS Code, or a Wine wrapper.
+
+## Docs
+
+- [README (English)](https://github.com/limin640/notepad-mac/blob/main/README.md): product page, comparison, download, build
+- [README (简体中文)](https://github.com/limin640/notepad-mac/blob/main/README.zh-CN.md)
+- [LICENSE](https://github.com/limin640/notepad-mac/blob/main/LICENSE): dual licensing, commercial contact
+- [Releases](https://github.com/limin640/notepad-mac/releases): DMG downloads
+- [Upstream Notepad4](https://github.com/zufuliu/notepad4)
+
+## Optional
+
+- [build.sh](https://github.com/limin640/notepad-mac/blob/main/build.sh): `./build.sh` then `open build/Notepad.app`
+- [scripts/package.sh](https://github.com/limin640/notepad-mac/blob/main/scripts/package.sh): unsigned DMG
+- [macapp/](https://github.com/limin640/notepad-mac/tree/main/macapp): AppKit UI, menus, preview, locales
+- [lexers_def/](https://github.com/limin640/notepad-mac/tree/main/lexers_def): 90-language word lists and styles from Notepad4
