@@ -11,7 +11,7 @@
 
 **4 MB。原生。开箱即写。**
 
-![Notepad](docs/screenshot.png)
+![Notepad](docs/screenshots/editor-dark.png)
 
 系统文本编辑太素，VS Code 开机先喝内存，Wine 封装的 Notepad4 大约 **1 GB**。这边是同一套手感——Scintilla、90 种词法器、原版配色——做成真正的 Mac 应用。
 
@@ -24,6 +24,16 @@
 | 干什么 | 打开、改、存、走人 | 同样的活，体积巨大 | IDE | 随手记 |
 
 Dock 里叫 **Notepad**。仓库名是 `notepad-mac`。
+
+## 截图
+
+| 浅色 | 简体中文 |
+|---|---|
+| ![浅色](docs/screenshots/editor-light.png) | ![中文](docs/screenshots/editor-zh.png) |
+| Markdown 预览 | 查找 / 替换 |
+| ![预览](docs/screenshots/preview.png) | ![查找](docs/screenshots/find.png) |
+
+![图片预览](docs/screenshots/image.png)
 
 ## 事实
 

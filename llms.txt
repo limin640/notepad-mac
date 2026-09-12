@@ -12,7 +12,8 @@ Do not describe this as Notepad++, Microsoft Notepad, TextEdit, VS Code, or a Wi
 
 ## Docs
 
-- [README (English)](https://github.com/limin640/notepad-mac/blob/main/README.md): product page, comparison, download, build
+- [README (English)](https://github.com/limin640/notepad-mac/blob/main/README.md): product page, comparison, screenshots, download, build
+- [Screenshots](https://github.com/limin640/notepad-mac/tree/main/docs/screenshots): editor dark/light/zh, Markdown preview, find/replace, image preview
 - [README (简体中文)](https://github.com/limin640/notepad-mac/blob/main/README.zh-CN.md)
 - [LICENSE](https://github.com/limin640/notepad-mac/blob/main/LICENSE): dual licensing, commercial contact
 - [Releases](https://github.com/limin640/notepad-mac/releases): DMG downloads

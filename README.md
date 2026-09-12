@@ -11,7 +11,7 @@
 
 **4 MB. Native. Open a file and type.**
 
-![Notepad](docs/screenshot.png)
+![Notepad](docs/screenshots/editor-dark.png)
 
 TextEdit is too bare. VS Code drinks RAM before you hit a key. Wine-wrapped Notepad4 is about **1 GB**. This is the same editor muscle — Scintilla, 90 lexers, original colors — as a real Mac app.
 
@@ -24,6 +24,16 @@ TextEdit is too bare. VS Code drinks RAM before you hit a key. Wine-wrapped Note
 | Job | open, edit, save, leave | same idea, huge | IDE | notes |
 
 The app in Dock is **Notepad**. This repo is `notepad-mac`.
+
+## Screenshots
+
+| Light | 简体中文 |
+|---|---|
+| ![Light](docs/screenshots/editor-light.png) | ![Chinese](docs/screenshots/editor-zh.png) |
+| Markdown preview | Find / replace |
+| ![Preview](docs/screenshots/preview.png) | ![Find](docs/screenshots/find.png) |
+
+![Image preview](docs/screenshots/image.png)
 
 ## Facts
 
