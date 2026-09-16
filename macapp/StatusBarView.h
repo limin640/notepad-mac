@@ -9,7 +9,10 @@
 - (void)updateForDocument:(nullable EditorDocument *)doc;
 - (void)setPreviewTarget:(id)target;
 - (void)setPreviewActive:(BOOL)on;
+- (void)setFileTreeActive:(BOOL)on;
 - (NSButton *)previewButton;
+- (NSButton *)fileTreeButton;
+- (NSString *)cellTextAtIndex:(NSUInteger)i;
 
 @property (nonatomic, readonly) NSTextField *posField;      // 行,列 (字符,选择)
 @property (nonatomic, readonly) NSTextField *lexerField;    // 词法器名

@@ -232,9 +232,17 @@
 		[e message:SCI_SETSELECTION wParam:found lParam:fEnd];
 		[e message:SCI_SCROLLCARET wParam:0 lParam:0];
 	} else if (!backwards && start > 0) {
-		// wrap 到头重找
 		[e message:SCI_SETTARGETSTART wParam:0 lParam:0];
 		[e message:SCI_SETTARGETEND wParam:len lParam:0];
+		const sptr_t f2 = [e message:SCI_SEARCHINTARGET wParam:findN lParam:(sptr_t)findC];
+		if (f2 >= 0) {
+			const sptr_t f2e = [e message:SCI_GETTARGETEND];
+			[e message:SCI_SETSELECTION wParam:f2 lParam:f2e];
+			[e message:SCI_SCROLLCARET wParam:0 lParam:0];
+		}
+	} else if (backwards && start < len) {
+		[e message:SCI_SETTARGETSTART wParam:len lParam:0];
+		[e message:SCI_SETTARGETEND wParam:0 lParam:0];
 		const sptr_t f2 = [e message:SCI_SEARCHINTARGET wParam:findN lParam:(sptr_t)findC];
 		if (f2 >= 0) {
 			const sptr_t f2e = [e message:SCI_GETTARGETEND];

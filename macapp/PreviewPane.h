@@ -17,7 +17,16 @@ typedef NS_ENUM(NSInteger, NPPreviewKind) {
 + (NPPreviewKind)kindForDocument:(EditorDocument *)doc;
 + (NSString *)htmlFromMarkdown:(NSString *)markdown;
 + (NSString *)htmlForDocument:(EditorDocument *)doc;
++ (NSString *)pageHTMLFromMarkdown:(NSString *)markdown dark:(BOOL)dark outline:(BOOL)outline;
++ (NSString *)wrapPreviewBody:(NSString *)body dark:(BOOL)dark kind:(NPPreviewKind)kind
+	editable:(BOOL)editable outline:(BOOL)outline;
++ (NSArray<NSDictionary *> *)outlineFromMarkdown:(NSString *)markdown;
++ (NSURL *)previewLibraryURL;
++ (BOOL)hasLocalPreviewLibraries;
 - (void)refreshDocument:(EditorDocument *)doc dark:(BOOL)dark;
+- (void)setOutlineVisible:(BOOL)on;
+- (BOOL)outlineVisible;
+- (void)foldPreviewOutline:(BOOL)fold;
 - (NSString *)lastHTML;
 - (NSString *)lastPageHTML;
 - (BOOL)lastRefreshInPlace;

@@ -50,6 +50,15 @@
 - (BOOL)windowIsUsable;
 - (void)presentWindow;
 - (void)viewPreview;
+- (void)viewFileTree;
+- (BOOL)fileTreeOn;
+- (NSArray<NSString *> *)fileTreeNames;
+- (BOOL)fileTreeOpenName:(NSString *)name;
+- (void)viewOutline;
+- (BOOL)previewOutlineVisible;
+- (void)foldPreviewOutline;
+- (void)unfoldPreviewOutline;
+- (BOOL)exportPreviewToURL:(NSURL *)url;
 - (BOOL)previewOn;
 - (NSString *)previewHTML;
 - (NSString *)previewLastPageHTML;
@@ -70,6 +79,8 @@
 - (CGFloat)previewPaneWidth;
 - (BOOL)setPreviewSplitPosition:(CGFloat)pos;
 - (NSButton *)previewStatusButton;
+- (NSButton *)fileTreeStatusButton;
+- (NSString *)statusBarTextAtIndex:(NSUInteger)i;
 + (NSArray *)liveControllers;
 + (NSInteger)liveControllerCount;
 @end

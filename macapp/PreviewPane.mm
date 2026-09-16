@@ -8,6 +8,16 @@
 
 static const NSUInteger kNPPreviewMaxChars = 1500u * 1024u;
 
+static void NPApplyLegacyScrollers(NSView *v) {
+	if ([v isKindOfClass:[NSScrollView class]]) {
+		NSScrollView *s = (NSScrollView *)v;
+		s.scrollerStyle = NSScrollerStyleLegacy;
+		s.autohidesScrollers = YES;
+	}
+	for (NSView *c in v.subviews)
+		NPApplyLegacyScrollers(c);
+}
+
 static NSString *NPEscapeHTML(NSString *s) {
 	if (s.length == 0) return @"";
 	NSMutableString *o = [s mutableCopy];
@@ -26,6 +36,13 @@ static BOOL NPSafeURL(NSString *u) {
 }
 
 static NSString *NPApplyInline(NSString *line);
+
+static NSString *NPJoinBrokenLines(NSArray<NSString *> *lines) {
+	NSMutableArray *parts = [NSMutableArray arrayWithCapacity:lines.count];
+	for (NSString *line in lines)
+		[parts addObject:NPApplyInline(line)];
+	return [parts componentsJoinedByString:@"<br>"];
+}
 
 static NSRange NPFindCloser(NSString *s, NSUInteger from, NSString *tok) {
 	if (from >= s.length) return NSMakeRange(NSNotFound, 0);
@@ -109,6 +126,22 @@ static NSString *NPApplyInline(NSString *line) {
 				continue;
 			}
 		}
+		if (c == '$') {
+			BOOL block = (i + 1 < n && [line characterAtIndex:i + 1] == '$');
+			NSString *tok = block ? @"$$" : @"$";
+			NSUInteger start = i + tok.length;
+			NSRange end = NPFindCloser(line, start, tok);
+			if (end.location != NSNotFound && end.location > start) {
+				NSString *tex = [line substringWithRange:NSMakeRange(start, end.location - start)];
+				if ([tex rangeOfString:@"\n"].location == NSNotFound) {
+					NSString *tag = block ? @"div" : @"span";
+					NSString *cls = block ? @"np4-math-block" : @"np4-math";
+					[out appendFormat:@"<%@ class=\"%@\">%@</%@>", tag, cls, NPEscapeHTML(tex), tag];
+					i = end.location + tok.length;
+					continue;
+				}
+			}
+		}
 		[out appendString:NPEscapeHTML([line substringWithRange:NSMakeRange(i, 1)])];
 		i += 1;
 	}
@@ -173,6 +206,7 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 	const NSUInteger n = lines.count;
 	BOOL fence = NO;
 	NSUInteger fenceLine = 0;
+	NSString *fenceLang = @"";
 	NSMutableString *code = [NSMutableString string];
 	__block NSString *listTag = nil;
 	void (^closeList)(void) = ^{
@@ -192,9 +226,18 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 		if (fence) {
 			NSString *t = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
 			if ([t hasPrefix:@"```"]) {
-				[html appendFormat:@"<pre data-src-line=\"%lu\"><code>%@</code></pre>", (unsigned long)(fenceLine + 1), NPEscapeHTML(code)];
+				if ([fenceLang isEqualToString:@"mermaid"])
+					[html appendFormat:@"<pre class=\"mermaid\" data-src-line=\"%lu\">%@</pre>",
+						(unsigned long)(fenceLine + 1), NPEscapeHTML(code)];
+				else if (fenceLang.length)
+					[html appendFormat:@"<pre data-src-line=\"%lu\"><code class=\"language-%@\">%@</code></pre>",
+						(unsigned long)(fenceLine + 1), NPEscapeHTML(fenceLang), NPEscapeHTML(code)];
+				else
+					[html appendFormat:@"<pre data-src-line=\"%lu\"><code>%@</code></pre>",
+						(unsigned long)(fenceLine + 1), NPEscapeHTML(code)];
 				[code setString:@""];
 				fence = NO;
+				fenceLang = @"";
 			} else {
 				if (code.length) [code appendString:@"\n"];
 				[code appendString:line];
@@ -207,8 +250,42 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 			closeList();
 			fence = YES;
 			fenceLine = i;
+			NSString *info = [[trim substringFromIndex:3]
+				stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+			NSArray *parts = [info componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+			fenceLang = (parts.count && [parts[0] length]) ? [parts[0] lowercaseString] : @"";
 			[code setString:@""];
 			i += 1;
+			continue;
+		}
+		if ([trim hasPrefix:@"$$"]) {
+			closeList();
+			NSUInteger mline = i;
+			NSMutableString *tex = [NSMutableString string];
+			NSString *rest = [trim substringFromIndex:2];
+			if ([rest hasSuffix:@"$$"] && rest.length >= 2) {
+				[tex setString:[rest substringToIndex:rest.length - 2]];
+				i += 1;
+			} else {
+				if (rest.length) [tex appendString:rest];
+				i += 1;
+				while (i < n) {
+					NSString *q = [lines[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+					if ([q isEqualToString:@"$$"] || [q hasSuffix:@"$$"]) {
+						NSString *bit = q;
+						if ([bit hasSuffix:@"$$"]) bit = [bit substringToIndex:bit.length - 2];
+						if (tex.length && bit.length) [tex appendString:@"\n"];
+						[tex appendString:bit];
+						i += 1;
+						break;
+					}
+					if (tex.length) [tex appendString:@"\n"];
+					[tex appendString:lines[i]];
+					i += 1;
+				}
+			}
+			[html appendFormat:@"<div class=\"np4-math-block\" data-src-line=\"%lu\">%@</div>",
+				(unsigned long)(mline + 1), NPEscapeHTML(tex)];
 			continue;
 		}
 		if (trim.length == 0) {
@@ -230,7 +307,9 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 			if (hashes > 0 && hashes < trim.length && [trim characterAtIndex:hashes] == ' ') {
 				NSString *title = [[trim substringFromIndex:hashes + 1]
 					stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-				[html appendFormat:@"<h%lu data-src-line=\"%lu\">%@</h%lu>", (unsigned long)hashes, (unsigned long)(i + 1), NPApplyInline(title), (unsigned long)hashes];
+				[html appendFormat:@"<h%lu id=\"np4-L%lu\" data-src-line=\"%lu\">%@</h%lu>",
+					(unsigned long)hashes, (unsigned long)(i + 1), (unsigned long)(i + 1),
+					NPApplyInline(title), (unsigned long)hashes];
 				i += 1;
 				continue;
 			}
@@ -248,7 +327,7 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 				[qs addObject:body];
 				i += 1;
 			}
-			[html appendString:NPApplyInline([qs componentsJoinedByString:@" "])];
+			[html appendString:NPJoinBrokenLines(qs)];
 			[html appendString:@"</blockquote>"];
 			continue;
 		}
@@ -287,7 +366,7 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 		}
 		closeList();
 		if ([trim hasPrefix:@"<"] && [trim hasSuffix:@">"] && trim.length > 2) {
-			[html appendFormat:@"<div data-src-line=\"%lu\">%@</div>", (unsigned long)(i + 1), line];
+			[html appendFormat:@"<div data-src-line=\"%lu\">%@</div>", (unsigned long)(i + 1), NPEscapeHTML(line)];
 			i += 1;
 			continue;
 		}
@@ -304,11 +383,72 @@ NSString *NPMarkdownToHTML(NSString *markdown) {
 			[para addObject:nt];
 			i += 1;
 		}
-		[html appendFormat:@"<p data-src-line=\"%lu\">%@</p>", (unsigned long)(pline + 1), NPApplyInline([para componentsJoinedByString:@" "])];
+		[html appendFormat:@"<p data-src-line=\"%lu\">%@</p>", (unsigned long)(pline + 1), NPJoinBrokenLines(para)];
 	}
 	closeList();
-	if (fence) [html appendFormat:@"<pre data-src-line=\"%lu\"><code>%@</code></pre>", (unsigned long)(fenceLine + 1), NPEscapeHTML(code)];
+	if (fence) {
+		if ([fenceLang isEqualToString:@"mermaid"])
+			[html appendFormat:@"<pre class=\"mermaid\" data-src-line=\"%lu\">%@</pre>",
+				(unsigned long)(fenceLine + 1), NPEscapeHTML(code)];
+		else
+			[html appendFormat:@"<pre data-src-line=\"%lu\"><code>%@</code></pre>",
+				(unsigned long)(fenceLine + 1), NPEscapeHTML(code)];
+	}
 	return html;
+}
+
+static NSString *NPStripPreviewTags(NSString *s) {
+	if (s.length == 0) return @"";
+	NSMutableString *o = [s mutableCopy];
+	NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>" options:0 error:nil];
+	if (re) o = [[re stringByReplacingMatchesInString:o options:0 range:NSMakeRange(0, o.length) withTemplate:@""] mutableCopy];
+	[o replaceOccurrencesOfString:@"&lt;" withString:@"<" options:0 range:NSMakeRange(0, o.length)];
+	[o replaceOccurrencesOfString:@"&gt;" withString:@">" options:0 range:NSMakeRange(0, o.length)];
+	[o replaceOccurrencesOfString:@"&amp;" withString:@"&" options:0 range:NSMakeRange(0, o.length)];
+	return o;
+}
+
+static NSArray<NSDictionary *> *NPOutlineItems(NSString *html) {
+	NSMutableArray *out = [NSMutableArray array];
+	if (html.length == 0) return out;
+	NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:
+		@"<h([1-6])[^>]*data-src-line=\"(\\d+)\"[^>]*>([\\s\\S]*?)</h\\1>"
+		options:NSRegularExpressionCaseInsensitive error:nil];
+	if (!re) return out;
+	for (NSTextCheckingResult *m in [re matchesInString:html options:0 range:NSMakeRange(0, html.length)]) {
+		if (m.numberOfRanges < 4) continue;
+		NSString *title = NPStripPreviewTags([html substringWithRange:[m rangeAtIndex:3]]);
+		if (title.length == 0) continue;
+		[out addObject:@{
+			@"level": @([[html substringWithRange:[m rangeAtIndex:1]] integerValue]),
+			@"line": @([[html substringWithRange:[m rangeAtIndex:2]] integerValue]),
+			@"title": title,
+		}];
+	}
+	return out;
+}
+
+static NSString *NPOutlineNav(NSString *html) {
+	NSArray *items = NPOutlineItems(html);
+	if (items.count == 0) return @"";
+	NSMutableString *nav = [NSMutableString string];
+	[nav appendFormat:@"<div class=\"np4-ol-title\">%@</div>", NPEscapeHTML(NPL(@"Outline"))];
+	for (NSDictionary *it in items) {
+		[nav appendFormat:
+			@"<div class=\"np4-ol-item\" data-ol-line=\"%@\" data-ol-level=\"%@\" style=\"padding-left:%ldpx\">"
+			@"<button type=\"button\" class=\"np4-ol-fold\" aria-label=\"fold\">▾</button>"
+			@"<a href=\"#np4-L%@\">%@</a></div>",
+			it[@"line"], it[@"level"], 4 + ([it[@"level"] integerValue] - 1) * 10,
+			it[@"line"], NPEscapeHTML(it[@"title"])];
+	}
+	return nav;
+}
+
+static NSString *NPComposeMarkdownBody(NSString *mdhtml) {
+	NSString *ol = NPOutlineNav(mdhtml);
+	if (ol.length)
+		return [NSString stringWithFormat:@"<nav class=\"np4-outline\" id=\"np4-outline\">%@</nav><div class=\"np4-md\">%@</div>", ol, mdhtml];
+	return [NSString stringWithFormat:@"<div class=\"np4-md\">%@</div>", mdhtml ?: @""];
 }
 
 static NSString *NPHTMLBodyInner(NSString *src) {
@@ -340,7 +480,7 @@ static NSString *NPHTMLKeptHead(NSString *src) {
 	return out;
 }
 
-static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BOOL editable) {
+static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BOOL editable, BOOL outlineOn) {
 	NSString *bg = dark ? @"#1e1e1e" : @"#ffffff";
 	NSString *fg = dark ? @"#e6e6e6" : @"#222222";
 	NSString *codebg = dark ? @"#2a2a2a" : @"#f4f4f4";
@@ -384,20 +524,68 @@ static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BO
 			@"window.webkit.messageHandlers.np4preview.postMessage({html:html});"
 			@"},180);});";
 	}
-	NSString *allJS = [syncJS stringByAppendingString:editJS];
+	NSString *enhanceJS =
+		@"window.np4Enhance=function(){"
+		@"try{if(window.mermaid){mermaid.initialize({startOnLoad:false,theme:document.body.classList.contains('dark')?'dark':'default'});"
+		@"document.querySelectorAll('pre.mermaid').forEach(function(el){if(el.getAttribute('data-np4-done'))return;"
+		@"el.setAttribute('data-np4-done','1');try{mermaid.run({nodes:[el]});}catch(e){}});}}"
+		@"if(window.katex){document.querySelectorAll('.np4-math,.np4-math-block').forEach(function(el){"
+		@"if(el.getAttribute('data-np4-done'))return;el.setAttribute('data-np4-done','1');"
+		@"try{katex.render(el.textContent,el,{throwOnError:false,displayMode:el.classList.contains('np4-math-block')});}catch(e){}});}}"
+		@"}catch(e){}};"
+		@"window.np4LoadLib=function(src,css){if(css){var l=document.createElement('link');l.rel='stylesheet';l.href=css;document.head.appendChild(l);}"
+		@"var s=document.createElement('script');s.src=src;s.async=true;s.onload=function(){window.np4Enhance();};s.onerror=function(){};document.head.appendChild(s);};"
+		@"window.np4FoldHeading=function(h,force){if(!h||!/^H[1-6]$/.test(h.tagName))return;"
+		@"var lv=parseInt(h.tagName[1],10);var hide;"
+		@"if(force===true)hide=true;else if(force===false)hide=false;else hide=!h.classList.contains('np4-folded');"
+		@"h.classList.toggle('np4-folded',hide);var n=h.nextElementSibling;"
+		@"while(n){if(/^H[1-6]$/.test(n.tagName)&&parseInt(n.tagName[1],10)<=lv)break;"
+		@"n.style.display=hide?'none':'';n=n.nextElementSibling;}};"
+		@"window.np4FoldOutline=function(fold){document.querySelectorAll('.np4-md h1,.np4-md h2,.np4-md h3,.np4-md h4,.np4-md h5,.np4-md h6')"
+		@".forEach(function(h){window.np4FoldHeading(h,fold);});};"
+		@"window.np4BindOutline=function(){var root=document.getElementById('np4-root');if(!root||root.getAttribute('data-ol-bound'))return;"
+		@"root.setAttribute('data-ol-bound','1');"
+		@"root.addEventListener('click',function(ev){var t=ev.target;if(!t)return;"
+		@"if(t.classList&&t.classList.contains('np4-ol-fold')){ev.preventDefault();"
+		@"var item=t.parentElement;var line=item&&item.getAttribute('data-ol-line');"
+		@"var h=line?document.getElementById('np4-L'+line):null;window.np4FoldHeading(h);t.textContent=h&&h.classList.contains('np4-folded')?'▸':'▾';return;}"
+		@"var a=t.closest?t.closest('.np4-ol-item a'):null;if(a){ev.preventDefault();"
+		@"var id=(a.getAttribute('href')||'').replace('#','');var el=document.getElementById(id);"
+		@"if(el)el.scrollIntoView({block:'start'});}});"
+		@"};"
+		@"window.np4BindOutline();"
+		@"if(document.querySelector('.mermaid,.np4-math,.np4-math-block')){"
+		@"window.np4LoadLib('katex.min.js','katex.min.css');"
+		@"window.np4LoadLib('mermaid.min.js',null);}";
+	NSString *allJS = [[syncJS stringByAppendingString:editJS] stringByAppendingString:enhanceJS];
+	NSString *bodyClass = [NSString stringWithFormat:@"%@%@", dark ? @"dark" : @"light",
+		outlineOn ? @"" : @" np4-hide-outline"];
 	return [NSString stringWithFormat:
 		@"<!doctype html><html><head><meta charset=\"utf-8\">"
 		@"<style>html,body{height:100%%;margin:0;padding:0;overflow:hidden;overflow-anchor:none;background:%@;color:%@;}"
-		@"#np4-scroller{height:100%%;overflow:auto;overflow-anchor:none;}"
-		@"#np4-root{font:14px/1.55 -apple-system,BlinkMacSystemFont,sans-serif;padding:12px 16px;min-height:100%%;}"
+		@"#np4-scroller{height:100%%;overflow:auto;overflow-anchor:none;scrollbar-gutter:stable;}"
+		@"#np4-scroller::-webkit-scrollbar{width:11px;height:11px;}"
+		@"#np4-scroller::-webkit-scrollbar-thumb{background:rgba(127,127,127,.4);border-radius:6px;}"
+		@"#np4-root{font:14px/1.55 -apple-system,BlinkMacSystemFont,sans-serif;padding:12px 16px 16px 16px;min-height:100%%;}"
+		@"#np4-root:has(> .np4-outline){display:flex;gap:12px;}"
+		@"#np4-root .np4-outline{flex:0 0 150px;max-height:100%%;overflow:auto;font-size:12px;line-height:1.4;border-right:1px solid rgba(127,127,127,.25);padding-right:8px;}"
+		@"#np4-root .np4-md{flex:1;min-width:0;}"
+		@"body.np4-hide-outline #np4-root{display:block;}"
+		@"body.np4-hide-outline .np4-outline{display:none;}"
+		@".np4-ol-title{font-weight:600;margin-bottom:6px;opacity:.75}"
+		@".np4-ol-item{margin:2px 0;display:flex;gap:4px;align-items:flex-start;}"
+		@".np4-ol-fold{border:0;background:transparent;color:inherit;padding:0;cursor:pointer;width:14px;}"
+		@".np4-ol-item a{color:inherit;text-decoration:none}"
+		@".np4-math,.np4-math-block{font-family:Menlo,monospace}"
+		@".np4-math-block{display:block;margin:8px 0;overflow:auto}"
 		@"h1,h2,h3{line-height:1.25} pre{background:%@;padding:10px;overflow:auto;border-radius:6px;}"
 		@"code{font-family:Menlo,monospace;font-size:12px} pre code{font-size:12px}"
 		@"a{color:%@} img{max-width:100%%} table{border-collapse:collapse}"
 		@"th,td{border:1px solid rgba(127,127,127,.45);padding:4px 8px}"
 		@"blockquote{margin:0 0 0 8px;padding-left:10px;border-left:3px solid rgba(127,127,127,.5);color:inherit;opacity:.9}"
 		@".np4-empty{opacity:.55;margin-top:36px;text-align:center}</style></head>"
-		@"<body class=\"%@\" data-np4-kind=\"%ld\"><div id=\"np4-scroller\"><div id=\"np4-root\">%@</div></div><script>%@</script></body></html>",
-		bg, fg, codebg, link, dark ? @"dark" : @"light", (long)kind, body, allJS];
+		@"<body class=\"%@\" data-np4-kind=\"%ld\" data-np4-libs=\"local\"><div id=\"np4-scroller\"><div id=\"np4-root\">%@</div></div><script>%@</script></body></html>",
+		bg, fg, codebg, link, bodyClass, (long)kind, body, allJS];
 }
 
 static NSString *NPJSONString(NSString *s) {
@@ -491,6 +679,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	CGFloat _lastSyncFrac;
 	NSInteger _pendingLine;
 	NSInteger _pendingCount;
+	BOOL _outlineOn;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -498,6 +687,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	if (self) {
 		_headless = [[[NSProcessInfo processInfo] arguments] containsObject:@"--headless"]
 			|| getenv("NP4_HEADLESS") != NULL;
+		_outlineOn = YES;
 		self.wantsLayer = YES;
 		self.layer.backgroundColor = [NSColor textBackgroundColor].CGColor;
 		_hint = [NSTextField labelWithString:@""];
@@ -536,6 +726,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	@try { [cfg.preferences setValue:@YES forKey:@"allowFileAccessFromFileURLs"]; } @catch (id e) {}
 	_web = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:cfg];
 	_web.navigationDelegate = self;
+	NPApplyLegacyScrollers(_web);
 	[self pinPreviewView:_web];
 }
 
@@ -570,6 +761,21 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 }
 - (NSInteger)lastSyncLine { return _lastSyncLine; }
 - (CGFloat)lastSyncFrac { return _lastSyncFrac; }
+- (BOOL)outlineVisible { return _outlineOn; }
+- (void)setOutlineVisible:(BOOL)on {
+	if (_outlineOn == on) return;
+	_outlineOn = on;
+	if (_headless || _web == nil) return;
+	NSString *js = [NSString stringWithFormat:
+		@"document.body.classList.toggle('np4-hide-outline',%@);", on ? @"false" : @"true"];
+	[_web evaluateJavaScript:js completionHandler:nil];
+}
+- (void)foldPreviewOutline:(BOOL)fold {
+	if (_headless || _web == nil) return;
+	NSString *js = [NSString stringWithFormat:@"if(window.np4FoldOutline)np4FoldOutline(%@);",
+		fold ? @"true" : @"false"];
+	[_web evaluateJavaScript:js completionHandler:nil];
+}
 - (void)applyPendingPreviewScroll {
 	if (_headless || _web == nil || _pageReady == NO) return;
 	if (_pendingCount <= 0) return;
@@ -604,6 +810,38 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 
 + (NSString *)htmlFromMarkdown:(NSString *)markdown {
 	return NPMarkdownToHTML(markdown ?: @"");
+}
+
++ (NSString *)wrapPreviewBody:(NSString *)body dark:(BOOL)dark kind:(NPPreviewKind)kind
+	editable:(BOOL)editable outline:(BOOL)outline {
+	return NPWrapPreview(body ?: @"", dark, kind, editable, outline);
+}
+
++ (NSString *)pageHTMLFromMarkdown:(NSString *)markdown dark:(BOOL)dark outline:(BOOL)outline {
+	NSString *md = NPMarkdownToHTML(markdown ?: @"");
+	return NPWrapPreview(NPComposeMarkdownBody(md), dark, NPPreviewMarkdown, NO, outline);
+}
+
++ (NSArray<NSDictionary *> *)outlineFromMarkdown:(NSString *)markdown {
+	return NPOutlineItems(NPMarkdownToHTML(markdown ?: @""));
+}
+
++ (NSURL *)previewLibraryURL {
+	NSURL *u = [[NSBundle mainBundle] URLForResource:@"preview" withExtension:nil];
+	if (u) return u;
+	NSString *src = [[NSBundle mainBundle].resourcePath
+		stringByAppendingPathComponent:@"preview"];
+	if ([[NSFileManager defaultManager] fileExistsAtPath:src])
+		return [NSURL fileURLWithPath:src];
+	return nil;
+}
+
++ (BOOL)hasLocalPreviewLibraries {
+	NSURL *dir = [self previewLibraryURL];
+	if (!dir) return NO;
+	NSFileManager *fm = [NSFileManager defaultManager];
+	return [fm fileExistsAtPath:[dir.path stringByAppendingPathComponent:@"katex.min.js"]]
+		&& [fm fileExistsAtPath:[dir.path stringByAppendingPathComponent:@"mermaid.min.js"]];
 }
 
 + (NSString *)htmlForDocument:(EditorDocument *)doc {
@@ -651,6 +889,8 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 		if (doc.fileURL) body = NPEmbedLocalImages(body, doc.fileURL);
 		if (body.length == 0)
 			body = [NSString stringWithFormat:@"<p class=\"np4-empty\">%@</p>", NPEscapeHTML(NPL(@"Empty document"))];
+		else
+			body = NPComposeMarkdownBody(body);
 	} else if (kind == NPPreviewHTML) {
 		hint = NPL(@"The preview is editable; changes write back to the source.");
 		editable = YES;
@@ -678,7 +918,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 		body = [NSString stringWithFormat:@"<p class=\"np4-empty\">%@</p>", NPEscapeHTML(hint)];
 	}
 	_hint.stringValue = hint;
-	NSString *page = NPWrapPreview(body ?: @"", dark, kind, editable);
+	NSString *page = NPWrapPreview(body ?: @"", dark, kind, editable, _outlineOn);
 	_lastHTML = [PreviewPane htmlForDocument:doc];
 	_lastPage = page;
 	_lastSrc = [src copy];
@@ -714,12 +954,14 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	}
 	[self ensureWeb];
 	_web.hidden = NO;
-	NSURL *base = doc.fileURL.URLByDeletingLastPathComponent;
+	NSURL *base = [PreviewPane previewLibraryURL] ?: doc.fileURL.URLByDeletingLastPathComponent;
 	if (sameShell) {
 		_lastRefreshInPlace = YES;
 		NSString *js = [NSString stringWithFormat:
 			@"(function(){var r=document.getElementById('np4-root');if(!r)return '0';"
-			@"r.innerHTML=%@;return '1';})()", NPJSONString(body)];
+			@"r.removeAttribute('data-ol-bound');r.innerHTML=%@;"
+			@"if(window.np4BindOutline)np4BindOutline();if(window.np4Enhance)np4Enhance();return '1';})()",
+			NPJSONString(body)];
 		__weak typeof(self) weakSelf = self;
 		[_web evaluateJavaScript:js completionHandler:^(id res, NSError *err) {
 			(void)err;
@@ -765,8 +1007,9 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-	(void)webView; (void)navigation;
+	(void)navigation;
 	_pageReady = YES;
+	NPApplyLegacyScrollers(webView);
 	[self applyPendingPreviewScroll];
 }
 

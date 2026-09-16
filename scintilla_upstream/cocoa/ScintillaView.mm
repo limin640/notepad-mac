@@ -38,6 +38,7 @@ using namespace Scintilla::Internal;
 // Specified here as backend accessed by SCIMarginView and SCIContentView.
 @interface ScintillaView()
 @property(nonatomic, readonly) Scintilla::Internal::ScintillaCocoa *backend;
+- (void) applyLegacyScrollers;
 @end
 
 // Two additional cursors we need, which aren't provided by Cocoa.
@@ -1475,9 +1476,9 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
 		[scrollView setHasVerticalScroller: YES];
 		[scrollView setHasHorizontalScroller: YES];
 		scrollView.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable;
-		//[scrollView setScrollerStyle:NSScrollerStyleLegacy];
-		//[scrollView setScrollerKnobStyle:NSScrollerKnobStyleDark];
-		//[scrollView setHorizontalScrollElasticity:NSScrollElasticityNone];
+		// 经典滚动条占自己的槽，避免叠在最后一行 / 行尾上
+		scrollView.autohidesScrollers = YES;
+		[self applyLegacyScrollers];
 		[self addSubview: scrollView];
 
 		marginView = [[SCIMarginView alloc] initWithScrollView: scrollView];
@@ -1516,6 +1517,11 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
 			   selector: @selector(defaultsDidChange:)
 			       name: NSSystemColorsDidChangeNotification
 			     object: self.window];
+
+		[center addObserver: self
+			   selector: @selector(preferredScrollerStyleDidChange:)
+			       name: NSPreferredScrollerStyleDidChangeNotification
+			     object: nil];
 
 		[scrollView.contentView setPostsBoundsChangedNotifications: YES];
 		[center addObserver: self
@@ -1568,10 +1574,23 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
 	mBackend->UpdateBaseElements();
 }
 
+- (void) applyLegacyScrollers {
+	// 系统偏好改成「自动隐藏」时也会把已有 NSScrollView 打回 overlay，这里钉死占槽
+	scrollView.scrollerStyle = NSScrollerStyleLegacy;
+	scrollView.verticalScroller.scrollerStyle = NSScrollerStyleLegacy;
+	scrollView.horizontalScroller.scrollerStyle = NSScrollerStyleLegacy;
+}
+
+- (void) preferredScrollerStyleDidChange: (NSNotification *) note {
+#pragma unused(note)
+	[self applyLegacyScrollers];
+}
+
 //--------------------------------------------------------------------------------------------------
 
 - (void) viewDidMoveToWindow {
 	[super viewDidMoveToWindow];
+	[self applyLegacyScrollers];
 
 	[self positionSubViews];
 

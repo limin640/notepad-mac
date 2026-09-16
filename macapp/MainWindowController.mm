@@ -7,6 +7,8 @@
 #import "Scintilla.h"
 #import "NPLocalization.h"
 #import "PreviewPane.h"
+#import "PreviewExport.h"
+#import "FileTreePane.h"
 #import "NPTheme.h"
 
 // 跟随系统明暗外观的 chrome 背景
@@ -367,6 +369,11 @@
 	FindReplacePanel *_findPanel;
 	NSView *_editorHost;
 	NSSplitView *_workSplit;
+	NSSplitView *_chromeSplit;
+	FileTreePane *_fileTree;
+	BOOL _fileTreeOn;
+	BOOL _fileTreeApplying;
+	CGFloat _fileTreeWidth;
 	PreviewPane *_previewPane;
 	BOOL _previewOn;
 	BOOL _previewIgnore;
@@ -378,6 +385,8 @@
 	NSPopUpButton *_lexPopup;
 	NSMenuItem *_wordWrapItem;
 	NSMenuItem *_lineNumbersItem;
+	NSMenuItem *_outlineItem;
+	NSMenuItem *_fileTreeItem;
 	StatusBarView *_statusBar;
 	NSView *_menuBar;
 	NSMutableArray<NSMenu *> *_inWindowMenus;
@@ -599,13 +608,24 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 	[root addSubview:tabs];
 	_tabBar = tabs;
 
-	// ---- 编辑器（占满中间；预览时左右分栏）----
+	// ---- 编辑器（占满中间；左侧文件树 + 预览时左右分栏）----
+	_chromeSplit = [[NPWorkSplit alloc] initWithFrame:NSZeroRect];
+	_chromeSplit.vertical = YES;
+	_chromeSplit.dividerStyle = NSSplitViewDividerStyleThick;
+	_chromeSplit.delegate = self;
+	_chromeSplit.translatesAutoresizingMaskIntoConstraints = NO;
+	[root addSubview:_chromeSplit];
 	_workSplit = [[NPWorkSplit alloc] initWithFrame:NSZeroRect];
 	_workSplit.vertical = YES;
 	_workSplit.dividerStyle = NSSplitViewDividerStyleThick;
 	_workSplit.delegate = self;
-	_workSplit.translatesAutoresizingMaskIntoConstraints = NO;
-	[root addSubview:_workSplit];
+	_workSplit.translatesAutoresizingMaskIntoConstraints = YES;
+	[_chromeSplit addSubview:_workSplit];
+	_fileTree = [[FileTreePane alloc] initWithFrame:NSZeroRect];
+	_fileTree.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+	_fileTree.translatesAutoresizingMaskIntoConstraints = YES;
+	__weak typeof(self) weakTree = self;
+	_fileTree.onOpenFile = ^(NSURL *url) { [weakTree openURLInTab:url]; };
 	_editorHost = [[NSView alloc] initWithFrame:NSZeroRect];
 	_editorHost.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	_editorHost.translatesAutoresizingMaskIntoConstraints = YES;
@@ -666,15 +686,15 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 	[plus.widthAnchor constraintEqualToConstant:24].active = YES;
 	[plus.heightAnchor constraintEqualToConstant:22].active = YES;
 
-	[root.leadingAnchor constraintEqualToAnchor:_workSplit.leadingAnchor].active = YES;
-	[root.trailingAnchor constraintEqualToAnchor:_workSplit.trailingAnchor].active = YES;
-	[_tabBar.bottomAnchor constraintEqualToAnchor:_workSplit.topAnchor].active = YES;
+	[root.leadingAnchor constraintEqualToAnchor:_chromeSplit.leadingAnchor].active = YES;
+	[root.trailingAnchor constraintEqualToAnchor:_chromeSplit.trailingAnchor].active = YES;
+	[_tabBar.bottomAnchor constraintEqualToAnchor:_chromeSplit.topAnchor].active = YES;
 
 	[root.leadingAnchor constraintEqualToAnchor:_statusBar.leadingAnchor].active = YES;
 	[root.trailingAnchor constraintEqualToAnchor:_statusBar.trailingAnchor].active = YES;
 	_statusBarHeight = [_statusBar.heightAnchor constraintEqualToConstant:22];
 	_statusBarHeight.active = YES;
-	[_workSplit.bottomAnchor constraintEqualToAnchor:_statusBar.topAnchor].active = YES;
+	[_chromeSplit.bottomAnchor constraintEqualToAnchor:_statusBar.topAnchor].active = YES;
 	[root.bottomAnchor constraintEqualToAnchor:_statusBar.bottomAnchor].active = YES;
 
 	_findPanel = [[FindReplacePanel alloc] initWithFrame:NSMakeRect(0, 0, 620, 84)];
@@ -779,6 +799,13 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 	MI(eols, NPL(@"Classic Mac (CR)"), @selector(setEOLCR), @"", 0);
 	eol.submenu = eols;
 	MSep(file);
+	NSMenuItem *exp = MI(file, NPL(@"Export"), nil, @"", 0);
+	NSMenu *exps = M(NPL(@""));
+	MI(exps, NPL(@"HTML..."), @selector(exportHTML), @"", 0);
+	MI(exps, NPL(@"PDF..."), @selector(exportPDF), @"", 0);
+	MI(exps, NPL(@"Image..."), @selector(exportPNG), @"", 0);
+	MI(exps, NPL(@"Word..."), @selector(exportDOCX), @"", 0);
+	exp.submenu = exps;
 	MI(file, NPL(@"Page Setup..."), @selector(filePageSetup), @"", 0);
 	MI(file, NPL(@"Print...\tCtrl+P"), @selector(printDocument), @"p", 0);
 	MSep(file);
@@ -1026,6 +1053,10 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 	_wordWrapItem = MI(view, NPL(@"Word Wrap\tCtrl+Shift+W"), @selector(viewWordWrap), @"w", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	_wordWrapItem.state = NPPrefBool(@"NP4WordWrap", NO) ? NSControlStateValueOn : NSControlStateValueOff;
 	MI(view, NPL(@"Preview\tCtrl+Shift+P"), @selector(viewPreview), @"p", NSEventModifierFlagCommand|NSEventModifierFlagShift);
+	_outlineItem = MI(view, NPL(@"Outline"), @selector(viewOutline), @"", 0);
+	_outlineItem.state = NPPrefBool(@"NP4ShowOutline", YES) ? NSControlStateValueOn : NSControlStateValueOff;
+	_fileTreeItem = MI(view, NPL(@"File Tree"), @selector(viewFileTree), @"", 0);
+	_fileTreeItem.state = NSControlStateValueOff;
 	MI(view, NPL(@"Long Line Marker\tCtrl+Shift+L"), @selector(viewLongLineMarker), @"l", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MI(view, NPL(@"Indentation Guides\tCtrl+Shift+G"), @selector(viewIndentGuides), @"g", NSEventModifierFlagCommand|NSEventModifierFlagShift);
 	MSep(view);
@@ -1046,6 +1077,9 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 	MI(foldm, NPL(@"Fold All"), @selector(foldAll), @"", 0);
 	MI(foldm, NPL(@"Unfold All"), @selector(unfoldAll), @"", 0);
 	MI(foldm, NPL(@"Toggle All Folds"), @selector(foldToggleAll), @"", 0);
+	MSep(foldm);
+	MI(foldm, NPL(@"Fold Preview Outline"), @selector(foldPreviewOutline), @"", 0);
+	MI(foldm, NPL(@"Unfold Preview Outline"), @selector(unfoldPreviewOutline), @"", 0);
 	fold.submenu = foldm;
 	NSMenuItem *zm = MI(view, NPL(@"Zoom"), nil, @"", 0);
 	NSMenu *zmm = M(NPL(@""));
@@ -1783,6 +1817,7 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 - (void)refreshStatus {
 	[_statusBar updateForDocument:_document];
 	[_statusBar setPreviewActive:_previewOn];
+	[_statusBar setFileTreeActive:_fileTreeOn];
 }
 
 // 对照 Notepad4 UpdateWindowTitle(): "* " + "文件名 [目录]" + " - Notepad4"
@@ -2333,16 +2368,30 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 	return YES;
 }
 - (NSButton *)previewStatusButton { return _statusBar.previewButton; }
+- (NSButton *)fileTreeStatusButton { return _statusBar.fileTreeButton; }
+- (NSString *)statusBarTextAtIndex:(NSUInteger)i {
+	[_statusBar updateForDocument:_document];
+	return [_statusBar cellTextAtIndex:i];
+}
 - (CGFloat)splitView:(NSSplitView *)splitView constrainMinCoordinate:(CGFloat)proposedMin ofSubviewAt:(NSInteger)dividerIndex {
 	(void)proposedMin; (void)dividerIndex;
+	if (splitView == _chromeSplit) return 140;
 	return 160;
 }
 - (CGFloat)splitView:(NSSplitView *)splitView constrainMaxCoordinate:(CGFloat)proposedMax ofSubviewAt:(NSInteger)dividerIndex {
 	(void)proposedMax; (void)dividerIndex;
+	if (splitView == _chromeSplit)
+		return NSWidth(splitView.bounds) - 220 - splitView.dividerThickness;
 	return NSWidth(splitView.bounds) - 160 - splitView.dividerThickness;
 }
 - (void)splitViewDidResizeSubviews:(NSNotification *)n {
-	(void)n;
+	if (n.object == _chromeSplit) {
+		if (_fileTreeApplying || _fileTreeOn == NO || _chromeSplit.subviews.count < 2) return;
+		_fileTreeWidth = NSWidth(_chromeSplit.subviews[0].frame);
+		if (_fileTreeWidth < 140) _fileTreeWidth = 140;
+		[[NSUserDefaults standardUserDefaults] setDouble:_fileTreeWidth forKey:@"NP4FileTreeWidth"];
+		return;
+	}
 	if (_previewApplying) return;   // 程序化布局期间不再触发，防递归
 	if (_previewOn == NO || _workSplit.subviews.count < 2) return;
 	const CGFloat usable = [self previewUsableWidth];
@@ -2357,7 +2406,81 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 	(void)splitView; (void)subview;
 	return NO;
 }
+- (void)refreshFileTree {
+	NSURL *dir = _document.fileURL.URLByDeletingLastPathComponent;
+	[_fileTree showDirectory:dir selected:_document.fileURL];
+}
+- (CGFloat)fileTreeWidth {
+	if (_fileTreeWidth <= 0) {
+		CGFloat w = [[NSUserDefaults standardUserDefaults] doubleForKey:@"NP4FileTreeWidth"];
+		_fileTreeWidth = (w >= 140 && w <= 420) ? w : 200;
+	}
+	return _fileTreeWidth;
+}
+- (void)setFileTreeOn:(BOOL)on {
+	if (_fileTreeOn == on) {
+		if (on) [self refreshFileTree];
+		[_statusBar setFileTreeActive:_fileTreeOn];
+		return;
+	}
+	_fileTreeOn = on;
+	_fileTreeApplying = YES;
+	if (on) {
+		if (_fileTree.superview != _chromeSplit)
+			[_chromeSplit addSubview:_fileTree positioned:NSWindowBelow relativeTo:_workSplit];
+		[_chromeSplit layoutSubtreeIfNeeded];
+		[_chromeSplit setPosition:[self fileTreeWidth] ofDividerAtIndex:0];
+		[self refreshFileTree];
+	} else {
+		[_fileTree removeFromSuperview];
+		[_chromeSplit adjustSubviews];
+	}
+	_fileTreeApplying = NO;
+	_fileTreeItem.state = on ? NSControlStateValueOn : NSControlStateValueOff;
+	[_statusBar setFileTreeActive:on];
+	[self persistSettings];
+}
+- (void)viewFileTree { [self setFileTreeOn:!_fileTreeOn]; }
+- (BOOL)fileTreeOn { return _fileTreeOn; }
+- (NSArray<NSString *> *)fileTreeNames { return [_fileTree visibleNames] ?: @[]; }
+- (BOOL)fileTreeOpenName:(NSString *)name { return [_fileTree selectAndOpenName:name]; }
 - (void)viewPreview { [self setPreviewOn:!_previewOn]; }
+- (void)viewOutline {
+	BOOL on = ![_previewPane outlineVisible];
+	[_previewPane setOutlineVisible:on];
+	_outlineItem.state = on ? NSControlStateValueOn : NSControlStateValueOff;
+	[self persistSettings];
+}
+- (BOOL)previewOutlineVisible { return [_previewPane outlineVisible]; }
+- (void)foldPreviewOutline { [_previewPane foldPreviewOutline:YES]; }
+- (void)unfoldPreviewOutline { [_previewPane foldPreviewOutline:NO]; }
+- (void)exportPreview:(NPExportFormat)fmt suggested:(NSString *)name {
+	if ([self runningHeadless]) return;
+	NSSavePanel *panel = [NSSavePanel savePanel];
+	panel.nameFieldStringValue = name ?: @"export";
+	[panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+		if (r != NSModalResponseOK) return;
+		[self exportPreviewToURL:panel.URL format:fmt];
+	}];
+}
+- (void)exportHTML { [self exportPreview:NPExportHTML suggested:@"preview.html"]; }
+- (void)exportPDF { [self exportPreview:NPExportPDF suggested:@"preview.pdf"]; }
+- (void)exportPNG { [self exportPreview:NPExportPNG suggested:@"preview.png"]; }
+- (void)exportDOCX { [self exportPreview:NPExportDOCX suggested:@"preview.docx"]; }
+- (BOOL)exportPreviewToURL:(NSURL *)url {
+	return [self exportPreviewToURL:url format:[PreviewExport formatFromPath:url.path]];
+}
+- (BOOL)exportPreviewToURL:(NSURL *)url format:(NPExportFormat)fmt {
+	if (url == nil) return NO;
+	NSString *src = [_document.editor string] ?: @"";
+	NPPreviewKind kind = [PreviewPane kindForDocument:_document];
+	NSString *md = (kind == NPPreviewMarkdown) ? src : @"";
+	NSString *html = [PreviewPane htmlForDocument:_document];
+	NSData *data = [PreviewExport dataFromMarkdown:md html:html format:fmt
+		dark:(_document.theme == NPThemeDark)];
+	NSError *err = nil;
+	return [PreviewExport writeData:data toURL:url error:&err];
+}
 - (BOOL)previewOn { return _previewOn; }
 - (NSString *)previewHTML { return [PreviewPane htmlForDocument:_document] ?: @""; }
 - (NSString *)previewLastPageHTML { return [_previewPane lastPageHTML] ?: @""; }
@@ -2956,6 +3079,8 @@ static NSColor *NPColorFromBGR(long v) {
 	[d setBool:!_toolBar.hidden forKey:@"NP4ShowToolbar"];
 	[d setBool:!_statusBar.hidden forKey:@"NP4ShowStatusbar"];
 	[d setBool:_previewOn forKey:@"NP4ShowPreview"];
+	[d setBool:_fileTreeOn forKey:@"NP4ShowFileTree"];
+	[d setBool:[_previewPane outlineVisible] forKey:@"NP4ShowOutline"];
 	[d setDouble:[self previewSplitFraction] forKey:@"NP4PreviewSplit"];
 	if (self.window && [self runningHeadless] == NO)
 		[d setObject:NSStringFromRect(self.window.frame) forKey:@"NP4WindowFrame"];
@@ -2980,6 +3105,10 @@ static NSColor *NPColorFromBGR(long v) {
 		_statusBarHeight.constant = 0;
 	}
 	if (NPPrefBool(@"NP4ShowPreview", NO)) [self setPreviewOn:YES];
+	if (NPPrefBool(@"NP4ShowFileTree", NO)) [self setFileTreeOn:YES];
+	const BOOL ol = NPPrefBool(@"NP4ShowOutline", YES);
+	[_previewPane setOutlineVisible:ol];
+	_outlineItem.state = ol ? NSControlStateValueOn : NSControlStateValueOff;
 	NSString *fs = [[NSUserDefaults standardUserDefaults] stringForKey:@"NP4WindowFrame"];
 	if (fs.length) {
 		NSRect r = NSRectFromString(fs);
@@ -3331,6 +3460,7 @@ static NSColor *NPColorFromBGR(long v) {
 	_document = doc;
 	[self swapEditor];
 	[self rebuildTabBar];
+	if (_fileTreeOn) [self refreshFileTree];
 }
 - (void)openURLInTab:(NSURL *)url {
 	if (!url.path.length) return;

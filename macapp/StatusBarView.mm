@@ -54,8 +54,10 @@ static NSString *WStr2(const wchar_t *ws) {
 @interface StatusBarView ()
 @property (nonatomic, strong) NSMutableArray<NSTextField *> *cells;
 @property (nonatomic, strong) NPStatusPreviewButton *previewBtn;
+@property (nonatomic, strong) NPStatusPreviewButton *treeBtn;
 @property (nonatomic, weak) id previewTarget;
 @property (nonatomic) BOOL previewOn;
+@property (nonatomic) BOOL fileTreeOn;
 @end
 
 @implementation StatusBarView
@@ -85,24 +87,31 @@ static NSString *WStr2(const wchar_t *ws) {
 	return @[@0, @64, @64, @64, @52, @44, @0, @110, @56, @44, @34, @40, @56];
 }
 
-- (void)rebuildPreviewButton {
-	if (_previewBtn) [_previewBtn removeFromSuperview];
+- (NPStatusPreviewButton *)makeToggle:(NSString *)title action:(SEL)act on:(BOOL)on {
 	NPStatusPreviewButton *b = [[NPStatusPreviewButton alloc] initWithFrame:NSZeroRect];
 	b.bordered = NO;
 	b.buttonType = NSButtonTypeMomentaryChange;
 	b.focusRingType = NSFocusRingTypeNone;
-	b.title = NPL(@"Preview");
-	b.toolTip = NPL(@"Preview");
+	b.title = title;
+	b.toolTip = title;
 	b.target = _previewTarget;
-	b.action = @selector(viewPreview);
-	b.previewOn = _previewOn;
+	b.action = act;
+	b.previewOn = on;
 	b.translatesAutoresizingMaskIntoConstraints = NO;
 	[self addSubview:b];
-	[b.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:4].active = YES;
 	[b.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = YES;
 	[b.heightAnchor constraintEqualToConstant:18].active = YES;
 	[b.widthAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
-	_previewBtn = b;
+	return b;
+}
+
+- (void)rebuildPreviewButton {
+	if (_previewBtn) [_previewBtn removeFromSuperview];
+	if (_treeBtn) [_treeBtn removeFromSuperview];
+	_previewBtn = [self makeToggle:NPL(@"Preview") action:@selector(viewPreview) on:_previewOn];
+	[_previewBtn.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:4].active = YES;
+	_treeBtn = [self makeToggle:NPL(@"Files") action:@selector(viewFileTree) on:_fileTreeOn];
+	[_treeBtn.leadingAnchor constraintEqualToAnchor:_previewBtn.trailingAnchor constant:4].active = YES;
 }
 
 - (void)buildCells {
@@ -111,7 +120,7 @@ static NSString *WStr2(const wchar_t *ws) {
 	[self rebuildPreviewButton];
 
 	NSArray<NSNumber *> *widths = [self widthsForLanguage];
-	NSView *prev = _previewBtn;
+	NSView *prev = _treeBtn ?: _previewBtn;
 	NSView *sep0 = [[NSView alloc] initWithFrame:NSZeroRect];
 	sep0.wantsLayer = YES;
 	sep0.layer.backgroundColor = [NSColor separatorColor].CGColor;
@@ -165,6 +174,8 @@ static NSString *WStr2(const wchar_t *ws) {
 	_previewTarget = target;
 	_previewBtn.target = target;
 	_previewBtn.action = @selector(viewPreview);
+	_treeBtn.target = target;
+	_treeBtn.action = @selector(viewFileTree);
 }
 
 - (void)setPreviewActive:(BOOL)on {
@@ -173,7 +184,17 @@ static NSString *WStr2(const wchar_t *ws) {
 	_previewBtn.needsDisplay = YES;
 }
 
+- (void)setFileTreeActive:(BOOL)on {
+	_fileTreeOn = on;
+	_treeBtn.previewOn = on;
+	_treeBtn.needsDisplay = YES;
+}
+
 - (NSButton *)previewButton { return _previewBtn; }
+- (NSButton *)fileTreeButton { return _treeBtn; }
+- (NSString *)cellTextAtIndex:(NSUInteger)i {
+	return [self cellAt:i].stringValue ?: @"";
+}
 
 - (NSTextField *)cellAt:(NSUInteger)i {
 	return (i < _cells.count) ? _cells[i] : nil;
@@ -186,10 +207,11 @@ static NSString *WStr2(const wchar_t *ws) {
 	const sptr_t pos = [e message:SCI_GETCURRENTPOS];
 	const sptr_t line = [e message:SCI_LINEFROMPOSITION wParam:pos];
 	const sptr_t lines = [e message:SCI_GETLINECOUNT];
-	const sptr_t lineStart = [e message:SCI_POSITIONFROMLINE wParam:line];
 	const sptr_t lineEnd = [e message:SCI_GETLINEENDPOSITION wParam:line];
-	const sptr_t col = pos - lineStart;
-	const sptr_t lineLen = lineEnd - lineStart;
+	const sptr_t col = [e message:SCI_GETCOLUMN wParam:pos];
+	const sptr_t lineLen = [e message:SCI_GETCOLUMN wParam:lineEnd];
+	const sptr_t chPos = [e message:SCI_COUNTCHARACTERS wParam:0 lParam:pos];
+	const sptr_t chLen = [e message:SCI_COUNTCHARACTERS wParam:0 lParam:[e message:SCI_GETLENGTH]];
 
 	const sptr_t selStart = [e message:SCI_GETSELECTIONSTART];
 	const sptr_t selEnd = [e message:SCI_GETSELECTIONEND];
@@ -206,7 +228,7 @@ static NSString *WStr2(const wchar_t *ws) {
 	[self cellAt:1].stringValue = [NSString stringWithFormat:NPL(@"Col %@ / %@"),
 		Num(col + 1), Num(lineLen + 1)];
 	[self cellAt:2].stringValue = [NSString stringWithFormat:NPL(@"Ch %@ / %@"),
-		Num(pos + 1), Num([e message:SCI_GETLENGTH] + 1)];
+		Num(chPos + 1), Num(chLen + 1)];
 	[self cellAt:3].stringValue = [NSString stringWithFormat:NPL(@"Sel %@ / %@"),
 		Num(selBytes), Num(selChars)];
 	[self cellAt:4].stringValue = [NSString stringWithFormat:NPL(@"SelLn %@"), Num(selLines)];

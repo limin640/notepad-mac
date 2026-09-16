@@ -18,6 +18,7 @@
 #import "LexerRegistry.h"
 #import "EditCommands.h"
 #import "PreviewPane.h"
+#import "PreviewExport.h"
 #import "SciLexer.h"
 #import "EditLexer.h"
 #import "Scintilla.h"
@@ -563,7 +564,11 @@ int main(int argc, const char *argv[]) {
 			__block int pass = 0, fail = 0, skip = 0;
 			void (^ok)(NSString *, BOOL) = ^(NSString *name, BOOL cond) {
 				[log appendFormat:@"%@ %@\n", cond ? @"PASS" : @"FAIL", name];
-				if (cond) pass++; else fail++;
+				if (cond) pass++;
+				else {
+					fail++;
+					NSLog(@"[audit] FAIL %@", name);
+				}
 			};
 			void (^sk)(NSString *, NSString *) = ^(NSString *name, NSString *why) {
 				[log appendFormat:@"SKIP %@ (%@)\n", name, why];
@@ -682,6 +687,8 @@ int main(int argc, const char *argv[]) {
 			ok(@"viewZoomOut", [e message:SCI_GETZOOM] == zoom0);
 			[controller performSelector:@selector(viewZoomReset)];
 			ok(@"viewZoomReset", [e message:SCI_GETZOOM] == 100);
+			ok(@"editor legacy scrollers",
+				d.editor.scrollView.scrollerStyle == NSScrollerStyleLegacy);
 			const BOOL menu0 = controller.window.contentView.subviews.firstObject.hidden;
 			[controller performSelector:@selector(toggleMenuBar)];
 			ok(@"toggleMenuBar", YES);
@@ -757,6 +764,11 @@ int main(int argc, const char *argv[]) {
 				[fp replaceAll:d];
 				ok(@"replaceAll CJK", [[e string] isEqualToString:@"xxQyyQzz"]);
 				ok(@"find panel Next button selector", [fp respondsToSelector:NSSelectorFromString(@"next:")]);
+				[e setString:@"aa xx aa"];
+				ff.stringValue = @"aa";
+				[e message:SCI_SETSEL wParam:0 lParam:0];
+				[fp findPrevious:d];
+				ok(@"findPrev wraps", [e message:SCI_GETSELECTIONSTART] == 6);
 			} else {
 				ok(@"find panel present", NO);
 			}
@@ -1181,6 +1193,28 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				ok(@"gb18030 open",
 					[controller.editorDocument.currentEncoding isEqualToString:@"GB18030"]
 					&& [[controller.editorDocument.editor string] containsString:@"你好国标"]);
+				NSString *big5Path = @"/tmp/np4-enc-big5.txt";
+				NSStringEncoding big5enc = CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingBig5);
+				[[@"繁體中文測試" dataUsingEncoding:big5enc] writeToFile:big5Path atomically:YES];
+				[controller openURLInTab:[NSURL fileURLWithPath:big5Path]];
+				ok(@"big5 open",
+					[controller.editorDocument.currentEncoding isEqualToString:@"BIG5"]
+					&& [[controller.editorDocument.editor string] containsString:@"繁體中文測試"]);
+				NSString *sjisPath = @"/tmp/np4-enc-sjis.txt";
+				NSStringEncoding sjisenc = CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingShiftJIS);
+				[[@"こんにちは" dataUsingEncoding:sjisenc] writeToFile:sjisPath atomically:YES];
+				[controller openURLInTab:[NSURL fileURLWithPath:sjisPath]];
+				ok(@"shift-jis open",
+					[controller.editorDocument.currentEncoding isEqualToString:@"Shift-JIS"]
+					&& [[controller.editorDocument.editor string] containsString:@"こんにちは"]);
+				[controller.editorDocument.editor setString:@"中"];
+				[controller.editorDocument.editor message:SCI_GOTOPOS
+					wParam:[controller.editorDocument.editor message:SCI_GETLENGTH] lParam:0];
+				[controller refreshStatus];
+				NSString *colCell = [controller statusBarTextAtIndex:1];
+				NSString *chCell = [controller statusBarTextAtIndex:2];
+				ok(@"cjk col not utf8 bytes", [colCell containsString:@"4"] == NO);
+				ok(@"cjk ch is characters", [chCell containsString:@"2"]);
 				[controller performSelector:@selector(setEncodingGBK)];
 				ok(@"setEncodingGBK", [controller.editorDocument.currentEncoding isEqualToString:@"GB18030"]
 					|| [controller.editorDocument.currentEncoding isEqualToString:@"GBK"]);
@@ -1396,21 +1430,105 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				ok(@"md pre", [mdh containsString:@"<pre"]);
 				ok(@"md link", [mdh containsString:@"example.com"]);
 				{
+					NSString *br = [PreviewPane htmlFromMarkdown:@"line1\nline2\n\nline3\n"];
+					ok(@"md single newline is br", [br containsString:@"line1<br>line2"]);
+					ok(@"md br not escaped", [br rangeOfString:@"&lt;br&gt;"].location == NSNotFound);
+					ok(@"md blank line still new p", [br containsString:@"<p data-src-line=\"4\">line3</p>"]);
+					NSString *bq = [PreviewPane htmlFromMarkdown:@"> qa\n> qb\n"];
+					ok(@"md quote keeps breaks", [bq containsString:@"qa<br>qb"]);
+					NSString *xss = [PreviewPane htmlFromMarkdown:@"<script>alert(1)</script>\n"];
+					ok(@"md raw html escaped", [xss containsString:@"&lt;script&gt;"]
+						&& [xss rangeOfString:@"<script>"].location == NSNotFound);
+				}
+				{
 					NSString *scheme = [@"java" stringByAppendingString:@"script:alert(1)"];
 					NSString *mdjs = [NSString stringWithFormat:@"[x](%@)", scheme];
 					NSString *blocked = [PreviewPane htmlFromMarkdown:mdjs];
 					ok(@"md js url blocked", [blocked rangeOfString:@"script:"].location == NSNotFound);
 				}
+				{
+					NSString *feat = [PreviewPane htmlFromMarkdown:
+						@"# A\n\n$$E=mc^2$$\n\ninline $a+b$\n\n```mermaid\ngraph LR\nA-->B\n```\n"];
+					ok(@"md math block", [feat containsString:@"np4-math-block"] && [feat containsString:@"E=mc^2"]);
+					ok(@"md math inline", [feat containsString:@"class=\"np4-math\""] && [feat containsString:@"a+b"]);
+					ok(@"md mermaid", [feat containsString:@"class=\"mermaid\""] && [feat containsString:@"A--&gt;B"]);
+					NSArray *ol = [PreviewPane outlineFromMarkdown:@"# HeadA\n\n## HeadB\n"];
+					ok(@"md outline count", ol.count == 2);
+					ok(@"md outline title", [ol[0][@"title"] isEqualToString:@"HeadA"]);
+					NSString *page = [PreviewPane pageHTMLFromMarkdown:@"# A\n\n$x$\n" dark:YES outline:YES];
+					ok(@"page dark class", [page containsString:@"class=\"dark\""]);
+					ok(@"page has outline", [page containsString:@"np4-outline"]);
+					ok(@"page enhance hook", [page containsString:@"np4Enhance"]);
+					NSString *hide = [PreviewPane pageHTMLFromMarkdown:@"# A\n" dark:NO outline:NO];
+					ok(@"page can hide outline", [hide containsString:@"np4-hide-outline"]);
+					ok(@"page libs local", [page containsString:@"data-np4-libs=\"local\""]);
+					ok(@"page no cdn", [page rangeOfString:@"cdn.jsdelivr"].location == NSNotFound);
+					ok(@"page loads katex file", [page containsString:@"katex.min.js"]);
+					ok(@"page loads mermaid file", [page containsString:@"mermaid.min.js"]);
+					ok(@"preview libs bundled", [PreviewPane hasLocalPreviewLibraries]);
+				}
+				ok(@"file tree default off", [controller fileTreeOn] == NO);
 				ok(@"preview default off", [controller previewOn] == NO);
 				NSString *mp = @"/tmp/np4-preview.md";
 				[@"# PreviewTitle\n\nhello **md**\n" writeToFile:mp atomically:YES encoding:NSUTF8StringEncoding error:nil];
 				[controller openURLInTab:[NSURL fileURLWithPath:mp]];
 				ok(@"md kind", [PreviewPane kindForDocument:controller.editorDocument] == NPPreviewMarkdown);
+				{
+					NSString *dir = @"/tmp/np4-tree";
+					[[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+					[@"tree-a\n" writeToFile:[dir stringByAppendingPathComponent:@"tree-a.md"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+					[@"tree-b\n" writeToFile:[dir stringByAppendingPathComponent:@"tree-b.md"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+					[controller openURLInTab:[NSURL fileURLWithPath:[dir stringByAppendingPathComponent:@"tree-a.md"]]];
+					[controller viewFileTree];
+					ok(@"file tree on", [controller fileTreeOn]);
+					NSArray *names = [controller fileTreeNames];
+					ok(@"file tree lists a", [names containsObject:@"tree-a.md"]);
+					ok(@"file tree lists b", [names containsObject:@"tree-b.md"]);
+					ok(@"file tree open b", [controller fileTreeOpenName:@"tree-b.md"]);
+					ok(@"file tree opened b", [[controller.editorDocument.editor string] containsString:@"tree-b"]);
+					NSButton *fb = [controller fileTreeStatusButton];
+					ok(@"file tree status button", fb != nil);
+					ok(@"file tree status title", [fb.title isEqualToString:@"文件"] || [fb.title isEqualToString:@"Files"]);
+					[controller viewFileTree];
+					ok(@"file tree toggle off", [controller fileTreeOn] == NO);
+					[controller openURLInTab:[NSURL fileURLWithPath:mp]];
+				}
 				[controller viewPreview];
 				ok(@"preview on", [controller previewOn]);
 				ok(@"preview html live", [[controller previewHTML] containsString:@"PreviewTitle"]);
+				ok(@"preview page has outline", [[controller previewLastPageHTML] containsString:@"np4-outline"]);
+				ok(@"outline default on", [controller previewOutlineVisible]);
+				[controller viewOutline];
+				ok(@"outline toggle off", [controller previewOutlineVisible] == NO);
+				[controller viewOutline];
+				ok(@"outline toggle on", [controller previewOutlineVisible]);
 				ok(@"preview page has root", [[controller previewLastPageHTML] containsString:@"id=\"np4-root\""]);
 				ok(@"preview page has scroller", [[controller previewLastPageHTML] containsString:@"id=\"np4-scroller\""]);
+				ok(@"preview reserves scrollbar gutter",
+					[[controller previewLastPageHTML] containsString:@"scrollbar-gutter:stable"]);
+				ok(@"preview sizes webkit scrollbar",
+					[[controller previewLastPageHTML] containsString:@"::-webkit-scrollbar"]);
+				{
+					[controller.editorDocument.editor setString:@"# ExpTitle\n\nhello **md**\n"];
+					[controller refreshPreviewNow];
+					NSString *eh = @"/tmp/np4-export.html";
+					NSString *ep = @"/tmp/np4-export.pdf";
+					NSString *eg = @"/tmp/np4-export.png";
+					NSString *ed = @"/tmp/np4-export.docx";
+					ok(@"export html write", [controller exportPreviewToURL:[NSURL fileURLWithPath:eh]]);
+					ok(@"export pdf write", [controller exportPreviewToURL:[NSURL fileURLWithPath:ep]]);
+					ok(@"export png write", [controller exportPreviewToURL:[NSURL fileURLWithPath:eg]]);
+					ok(@"export docx write", [controller exportPreviewToURL:[NSURL fileURLWithPath:ed]]);
+					NSData *hd = [NSData dataWithContentsOfFile:eh];
+					NSData *pd = [NSData dataWithContentsOfFile:ep];
+					NSData *gd = [NSData dataWithContentsOfFile:eg];
+					NSData *dd = [NSData dataWithContentsOfFile:ed];
+					NSString *hs = [[NSString alloc] initWithData:hd encoding:NSUTF8StringEncoding] ?: @"";
+					ok(@"export html has title", [hs containsString:@"ExpTitle"]);
+					ok(@"export pdf magic", pd.length > 8 && memcmp(pd.bytes, "%PDF", 4) == 0);
+					ok(@"export png magic", gd.length > 8 && memcmp(gd.bytes, "\x89PNG", 4) == 0);
+					ok(@"export docx zip", dd.length > 8 && memcmp(dd.bytes, "PK", 2) == 0);
+				}
 				[controller.editorDocument.editor setString:@"# AfterEdit\n\nkeep-place\n\nend\n"];
 				[controller refreshPreviewNow];
 				ok(@"preview follows edit", [[controller previewHTML] containsString:@"AfterEdit"]);
@@ -1782,6 +1900,8 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 					@"settingsAutoCompletion", @"settingsSaveNow", @"toolsExecute", @"toolsOpenWith",
 					@"toolsRunCommand", @"actionOpenSelection", @"actionSearchGoogle", @"actionSearchBing", @"actionSearchWiki", @"helpHome", @"helpDonate",
 					@"fileCreateDesktopShortcut", @"reloadWithEncodingDialog",
+					@"exportHTML", @"exportPDF", @"exportPNG", @"exportDOCX",
+					@"undo:", @"redo:", @"cut:", @"copy:", @"paste:", @"delete:", @"selectAll:",
 					@"editInsertXMLTag", @"editEncloseCustom", @"viewPreview",
 					@"languageChinese", @"languageEnglish", @"languageSystem", @"languagePicked:", @"themeAuto", @"themeDefault", @"themeDark",
 					@"openContainingFolder", @"tbBrowse", @"tbOpenFav", @"tbOpenMenu", @"tbFoldMenu",
@@ -1815,7 +1935,10 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 					[ev message:SCI_SELECTALL wParam:0 lParam:0];
 					#pragma clang diagnostic push
 					#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-					[controller performSelector:sel];
+					if ([act hasSuffix:@":"])
+						[controller performSelector:sel withObject:nil];
+					else
+						[controller performSelector:sel];
 					#pragma clang diagnostic pop
 					invoked++;
 					if ([mutate containsObject:act] && ![[ev string] isEqualToString:fixture]) mutated++;

@@ -68,6 +68,27 @@ static NSData *NPRecodeToUTF8(NSData *src, NSStringEncoding enc, NSUInteger skip
 	return [s dataUsingEncoding:NSUTF8StringEncoding];
 }
 
+// GB18030 几乎总能解出字，必须和 BIG5 / Shift-JIS 打分，不能谁先成功用谁
+static NSInteger NPScoreDecoded(NSString *s, NSString *kind) {
+	if (s.length == 0) return -1;
+	NSInteger cjk = 0, kana = 0, pua = 0, ctrl = 0;
+	const NSUInteger lim = s.length < 8000 ? s.length : 8000;
+	for (NSUInteger i = 0; i < lim; i++) {
+		const unichar c = [s characterAtIndex:i];
+		if (c == 0xFFFD) { pua += 4; continue; }
+		if (c < 32 && c != 9 && c != 10 && c != 13) { ctrl++; continue; }
+		if (c >= 0xE000 && c <= 0xF8FF) { pua++; continue; }
+		if (c >= 0x3040 && c <= 0x30FF) kana++;
+		else if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF)) cjk++;
+	}
+	NSInteger score = cjk * 3 + kana * 8 - pua * 80 - ctrl * 20;
+	if (kana > 0 && cjk > kana && ![kind isEqualToString:@"Shift-JIS"])
+		score -= kana * 10;
+	if ([kind isEqualToString:@"BIG5"] && kana > 0)
+		score -= kana * 6;
+	return score;
+}
+
 typedef struct {
 	NSData *keepAlive;
 	const char *bytes;
@@ -111,14 +132,32 @@ static NPLoadBuf NPPrepareUTF8Load(NSData *data) {
 		r.length = n;
 		return r;
 	}
-	NSData *gb = NPRecodeToUTF8(data, CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000), 0);
-	if (gb) {
-		r.keepAlive = gb;
-		r.encoding = @"GB18030";
-		r.bytes = static_cast<const char *>(gb.bytes);
-		r.length = gb.length;
-		return r;
+
+	struct { NSString *name; CFStringEncoding cf; } cands[] = {
+		{@"GB18030", kCFStringEncodingGB_18030_2000},
+		{@"BIG5", kCFStringEncodingBig5},
+		{@"Shift-JIS", kCFStringEncodingShiftJIS},
+	};
+	NSInteger bestScore = 0;
+	NPLoadBuf best = r;
+	BOOL hit = NO;
+	for (size_t i = 0; i < sizeof(cands) / sizeof(cands[0]); i++) {
+		NSStringEncoding enc = CFStringConvertEncodingToNSStringEncoding(cands[i].cf);
+		NSData *utf8 = NPRecodeToUTF8(data, enc, 0);
+		if (utf8.length == 0) continue;
+		NSString *s = [[NSString alloc] initWithData:utf8 encoding:NSUTF8StringEncoding];
+		const NSInteger sc = NPScoreDecoded(s, cands[i].name);
+		if (sc > bestScore) {
+			bestScore = sc;
+			best.keepAlive = utf8;
+			best.encoding = cands[i].name;
+			best.bytes = static_cast<const char *>(utf8.bytes);
+			best.length = utf8.length;
+			hit = YES;
+		}
 	}
+	if (hit) return best;
+
 	NSData *lat = NPRecodeToUTF8(data, NSISOLatin1StringEncoding, 0);
 	r.keepAlive = lat ?: data;
 	r.encoding = @"Latin-1";

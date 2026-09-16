@@ -350,5 +350,16 @@
   "Select to Document End": "選到文件結尾",
   "Detect URLs": "識別網址",
   "URL Component Encode": "URL 元件編碼",
-  "There are unsaved documents.": "有未儲存的文件。"
+  "There are unsaved documents.": "有未儲存的文件。",
+  "Export": "匯出",
+  "HTML...": "HTML...",
+  "PDF...": "PDF...",
+  "Image...": "圖片...",
+  "Word...": "Word...",
+  "Outline": "大綱",
+  "Fold Preview Outline": "摺疊預覽大綱",
+  "Unfold Preview Outline": "展開預覽大綱",
+  "File Tree": "檔案樹",
+  "Files": "檔案",
+  "Open a file to show its folder.": "開啟檔案後顯示所在資料夾。"
 }

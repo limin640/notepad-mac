@@ -372,5 +372,16 @@
   "Select to Document End": "选到文档末尾",
   "Detect URLs": "识别网址",
   "URL Component Encode": "URL 组件编码",
-  "There are unsaved documents.": "有未保存的文档。"
+  "There are unsaved documents.": "有未保存的文档。",
+  "Export": "导出",
+  "HTML...": "HTML...",
+  "PDF...": "PDF...",
+  "Image...": "图片...",
+  "Word...": "Word...",
+  "Outline": "大纲",
+  "Fold Preview Outline": "折叠预览大纲",
+  "Unfold Preview Outline": "展开预览大纲",
+  "File Tree": "文件树",
+  "Files": "文件",
+  "Open a file to show its folder.": "打开文件后显示所在文件夹。"
 }

@@ -77,12 +77,14 @@ add_executable(Notepad4 MACOSX_BUNDLE
     macapp/NPLocalization.mm
     macapp/EditCommands.mm
     macapp/PreviewPane.mm
+    macapp/PreviewExport.mm
+    macapp/FileTreePane.mm
 )
 set_source_files_properties(
     macapp/main.mm macapp/MainWindowController.mm macapp/EditorDocument.mm
     macapp/LexerRegistry.mm macapp/FindReplacePanel.mm macapp/StatusBarView.mm
     macapp/NPTheme.mm macapp/NPLocalization.mm macapp/EditCommands.mm
-    macapp/PreviewPane.mm
+    macapp/PreviewPane.mm macapp/PreviewExport.mm macapp/FileTreePane.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc"
 )
 target_include_directories(Notepad4 PRIVATE
@@ -123,5 +125,8 @@ add_custom_command(TARGET Notepad4 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/macapp/locale"
         "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/locale"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/macapp/Resources/preview"
+        "$<TARGET_BUNDLE_DIR:Notepad4>/Contents/Resources/preview"
     COMMAND touch "$<TARGET_BUNDLE_DIR:Notepad4>"
     COMMENT "Copying app icon, toolbar icons, dark theme, license, locales")
