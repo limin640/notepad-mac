@@ -377,8 +377,15 @@ static void InjectTestContent(int argc, const char *argv[], MainWindowController
 	NSString *ext = @"cpp";
 	if (const char *e = ArgValue(argc, argv, "--ext")) ext = [NSString stringWithUTF8String:e];
 	if (const char *t = ArgValue(argc, argv, "--theme")) {
-		if (strcmp(t, "dark") == 0) [doc setTheme:NPThemeDark];
-		else if (strcmp(t, "light") == 0) [doc setTheme:NPThemeDefault];
+		// --theme 必须同步应用外观，等价于菜单里选浅色/深色；只改内容会得到
+		// "内容浅色 + 标题栏/工具栏暗色"的混搭，误导截图验证。
+		if (strcmp(t, "dark") == 0) {
+			NPThemeModeOverrideForTesting(NPThemeModeDark);
+			[doc setTheme:NPThemeDark];
+		} else if (strcmp(t, "light") == 0) {
+			NPThemeModeOverrideForTesting(NPThemeModeLight);
+			[doc setTheme:NPThemeDefault];
+		}
 	}
 	[doc applyLexerForExtension:ext];
 	[doc updateLineNumberWidth];
@@ -914,6 +921,16 @@ int main(int argc, const char *argv[]) {
 			[controller openInWindowMenuAtIndex:3];
 			ok(@"view menu checkmarks", [controller inWindowCheckedRowCount] >= 2);
 			[controller closeInWindowMenu];
+			{
+				NSString *sys = NSApp.appearance.name;
+				[controller performSelector:@selector(themeDefault)];
+				ok(@"theme light pins aqua", [NSApp.appearance.name isEqualToString:NSAppearanceNameAqua]);
+				[controller performSelector:@selector(themeDark)];
+				ok(@"theme dark pins dark aqua", [NSApp.appearance.name isEqualToString:NSAppearanceNameDarkAqua]);
+				[controller performSelector:@selector(themeAuto)];
+				ok(@"theme auto follows system", NSApp.appearance == nil
+					|| [NSApp.appearance.name isEqualToString:sys]);
+			}
 			NSString *props = [controller documentPropertiesText];
 			ok(@"properties text", [props containsString:@"UTF"] && ([props containsString:@"LF"] || [props containsString:@"CR"]));
 			NSString *lname = d.currentLexerName;
