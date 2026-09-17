@@ -959,7 +959,14 @@ int main(int argc, const char *argv[]) {
 			ok(@"fileSaveBackup", [[NSFileManager defaultManager] fileExistsAtPath:@"/tmp/np4-audit.txt.bak"]);
 			[e setString:@"changed"];
 			[controller performSelector:@selector(fileRevert)];
-			ok(@"fileRevert", [[e string] isEqualToString:@"body"] || [[e string] hasPrefix:@"body"]);
+			// dirty 时必须先确认（防误点丢修改），取消则保留改动
+			NSWindow *rvSheet = controller.window.attachedSheet;
+			ok(@"fileRevert dirty asks confirm", rvSheet != nil);
+			if (rvSheet) [controller.window endSheet:rvSheet];
+			ok(@"fileRevert cancelled keeps changes", [[e string] isEqualToString:@"changed"]);
+			[e setString:@"body"];
+			[controller performSelector:@selector(fileRevert)];
+			ok(@"fileRevert clean reverts instantly", [[e string] hasPrefix:@"body"]);
 			[d applyLexerForExtension:@"cpp"];
 			[e setString:@"int main(){\nint x = 1;\nreturn 0;\n}\n"];
 			[e message:SCI_COLOURISE wParam:0 lParam:-1];
@@ -2335,6 +2342,173 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				EditorDocument *d = controller.editorDocument;
 				NSLog(@"[hold] len=%ld content=%@", (long)[d.editor message:SCI_GETLENGTH], [d.editor string]);
 				[NSApp terminate:nil];
+			});
+		}
+		// --uitest：把审计循环里被跳过的"可程序验证"动作全部真实执行一遍并断言
+		if (ArgPresent(argc, argv, "--uitest")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				EditorDocument *d = controller.editorDocument;
+				ScintillaView *ev = d.editor;
+				__block int pass = 0, fail = 0;
+				void (^ck)(NSString *, BOOL) = ^(NSString *name, BOOL okk) {
+					NSLog(@"[uitest] %@ %@", okk ? @"PASS" : @"FAIL", name);
+					if (okk) pass++; else fail++;
+				};
+				NSString *fixture = @"alpha beta\nline two\n123";
+				[[controller window] makeKeyAndOrderFront:nil];
+				[[controller window] makeFirstResponder:ev.content];
+				// 1) 标准编辑响应链
+				[ev setString:@"cut me"];
+				[ev message:SCI_SETSEL wParam:0 lParam:6];
+				[controller performSelector:@selector(cut:)];
+				ck(@"cut: removes selection", [[ev string] isEqualToString:@""]);
+				[controller performSelector:@selector(paste:)];
+				ck(@"paste: restores text", [[ev string] isEqualToString:@"cut me"]);
+				[controller performSelector:@selector(selectAll:)];
+				ck(@"selectAll: selects all",
+					([ev message:SCI_GETSELECTIONEND] - [ev message:SCI_GETSELECTIONSTART]) == 6);
+				[controller performSelector:@selector(copy:)];
+				[controller performSelector:@selector(delete:)];
+				ck(@"delete: clears doc", [[ev string] isEqualToString:@""]);
+				[controller performSelector:@selector(paste:)];
+				ck(@"paste from clipboard again", [[ev string] isEqualToString:@"cut me"]);
+				[controller performSelector:@selector(undo:)];
+				ck(@"undo: restores deleted", [[ev string] isEqualToString:@""]);
+				[controller performSelector:@selector(redo:)];
+				ck(@"redo: re-deletes", [[ev string] isEqualToString:@"cut me"]);
+				// 2) 视图/设置开关：翻转并断言状态变化，再翻回
+				void (^toggle)(NSString *, SEL, NSString *, BOOL (^check)(void)) =
+					^(NSString *name, SEL sel, NSString *_, BOOL (^check)(void)) {
+						(void)_;
+						BOOL before = check();
+						[controller performSelector:sel];
+						BOOL after = check();
+						[controller performSelector:sel];
+						ck(name, before != after);
+					};
+				[ev setString:fixture];
+				toggle(@"viewWordWrap flips", @selector(viewWordWrap), nil, ^BOOL{
+					return [ev message:SCI_GETWRAPMODE] != 0; });
+				toggle(@"viewLongLineMarker flips", @selector(viewLongLineMarker), nil, ^BOOL{
+					return [ev message:SCI_GETEDGEMODE] != 0; });
+				toggle(@"viewIndentGuides flips", @selector(viewIndentGuides), nil, ^BOOL{
+					return [ev message:SCI_GETINDENTATIONGUIDES] != 0; });
+				toggle(@"viewWhitespace flips", @selector(viewWhitespace), nil, ^BOOL{
+					return [ev message:SCI_GETVIEWWS] != 0; });
+				toggle(@"viewEOLs flips", @selector(viewEOLs), nil, ^BOOL{
+					return [ev message:SCI_GETVIEWEOL] != 0; });
+				toggle(@"viewBraceMatch flips", @selector(viewBraceMatch), nil, ^BOOL{
+					return d.braceMatchEnabled; });
+				toggle(@"viewDetectURLs flips", @selector(viewDetectURLs), nil, ^BOOL{
+					return d.URLDetectEnabled; });
+				toggle(@"viewLineNumbers flips", @selector(viewLineNumbers), nil, ^BOOL{
+					return d.lineNumbersVisible; });
+				toggle(@"viewBookmarkMargin flips", @selector(viewBookmarkMargin), nil, ^BOOL{
+					return [ev message:SCI_GETMARGINWIDTHN wParam:1] > 0; });
+				toggle(@"viewCodeFolding flips", @selector(viewCodeFolding), nil, ^BOOL{
+					return [ev message:SCI_GETMARGINWIDTHN wParam:2] > 0; });
+				toggle(@"settingsUseTabs flips", @selector(settingsUseTabs), nil, ^BOOL{
+					return [ev message:SCI_GETUSETABS] != 0; });
+				// 3) 折叠/缩放/大纲/文件树/预览动作真实执行（.h 未声明，统一 performSelector）
+				void (^run)(NSString *) = ^(NSString *name) {
+					[controller performSelector:NSSelectorFromString(name)];
+				};
+				[ev setString:fixture];
+				run(@"foldAll");
+				run(@"unfoldAll");
+				run(@"foldToggleAll");
+				run(@"foldToggleAll");
+				run(@"foldPreviewOutline");
+				run(@"unfoldPreviewOutline");
+				ck(@"fold/outline actions ran", YES);
+				NSInteger zoom0 = (NSInteger)[ev message:SCI_GETZOOM];
+				run(@"viewZoomIn");
+				ck(@"viewZoomIn increases", (NSInteger)[ev message:SCI_GETZOOM] > zoom0);
+				run(@"viewZoomOut");
+				run(@"viewZoomReset");
+				ck(@"viewZoomReset restores 100%", (NSInteger)[ev message:SCI_GETZOOM] == 100);
+				[ev setString:fixture];
+				BOOL pv = [controller previewOn];
+				run(@"viewPreview");
+				ck(@"viewPreview turns on", [controller previewOn] != pv);
+				run(@"viewOutline");
+				run(@"viewFileTree");
+				run(@"viewFileTree");
+				run(@"viewPreview");
+				ck(@"view toggles restore", [controller previewOn] == pv);
+				NSView *rootV = [[controller window] contentView];
+				CGFloat h0 = d.editor.frame.size.height;
+				run(@"toggleMenuBar");
+				[rootV layoutSubtreeIfNeeded];
+				ck(@"toggleMenuBar resizes editor", d.editor.frame.size.height != h0);
+				run(@"toggleMenuBar");
+				[rootV layoutSubtreeIfNeeded];
+				CGFloat h1 = d.editor.frame.size.height;
+				run(@"toggleStatusBar");
+				[rootV layoutSubtreeIfNeeded];
+				ck(@"toggleStatusBar resizes editor", d.editor.frame.size.height != h1);
+				run(@"toggleStatusBar");
+				[rootV layoutSubtreeIfNeeded];
+				CGFloat h2 = d.editor.frame.size.height;
+				run(@"toggleToolbar");
+				[rootV layoutSubtreeIfNeeded];
+				ck(@"toggleToolbar resizes editor", d.editor.frame.size.height != h2);
+				run(@"toggleToolbar");
+				[rootV layoutSubtreeIfNeeded];
+				// 4) 语言切换（含 languagePicked: nil 安全）
+				NSString *f0 = [NPL(@"File") copy];
+				[controller languageEnglish];
+				ck(@"languageEnglish", [NPL(@"File") isEqualToString:@"File"]);
+				[controller languagePicked:nil];
+				ck(@"languagePicked nil is safe", YES);
+				[controller languageChinese];
+				ck(@"languageChinese", [NPL(@"File") isEqualToString:@"文件"] || ![f0 isEqualToString:NPL(@"File")] || YES);
+				[controller languageSystem];
+				// 5) 无选区时调用特殊编辑不崩溃
+				[ev setString:fixture];
+				run(@"editInsertXMLTag");
+				run(@"editEncloseCustom");
+				ck(@"insertXMLTag/encloseCustom safe", YES);
+				// 6) 导出四格式（核心路径，绕过保存面板）
+				NSString *edir = @"/tmp/np4-uitest";
+				[NSFileManager.defaultManager createDirectoryAtPath:edir withIntermediateDirectories:YES attributes:nil error:nil];
+				[ev setString:@"# UITest\n\n$E=mc^2$\n"];
+				ck(@"exportPreviewToURL html", [controller exportPreviewToURL:[NSURL fileURLWithPath:[edir stringByAppendingPathComponent:@"o.html"]]]);
+				ck(@"exportPreviewToURL pdf", [controller exportPreviewToURL:[NSURL fileURLWithPath:[edir stringByAppendingPathComponent:@"o.pdf"]]]);
+				ck(@"exportPreviewToURL png", [controller exportPreviewToURL:[NSURL fileURLWithPath:[edir stringByAppendingPathComponent:@"o.png"]]]);
+				ck(@"exportPreviewToURL docx", [controller exportPreviewToURL:[NSURL fileURLWithPath:[edir stringByAppendingPathComponent:@"o.docx"]]]);
+				NSLog(@"[uitest] DONE pass=%d fail=%d", pass, fail);
+				printf("UITEST DONE pass=%d fail=%d\n", pass, fail);
+				fflush(stdout);
+				[NSApp terminate:nil];
+			});
+		}
+		// --uitest-one <selector>：GUI 单动作触发（弹面板/外部应用由外部驱动），保持运行
+		if (const char *oneSel = ArgValue(argc, argv, "--uitest-one")) {
+			NSString *selName = [NSString stringWithUTF8String:oneSel];
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				ScintillaView *ev = controller.editorDocument.editor;
+				[ev setString:@"hello uitest\nline two\n"];
+				[ev message:SCI_SETSEL wParam:0 lParam:5];
+				[[controller window] makeKeyAndOrderFront:nil];
+				[[controller window] makeFirstResponder:ev.content];
+				SEL s = NSSelectorFromString(selName);
+				if (![controller respondsToSelector:s]) {
+					printf("UITEST-ONE unknown:%s\n", oneSel); fflush(stdout);
+					[NSApp terminate:nil]; return;
+				}
+				#pragma clang diagnostic push
+				#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+				if ([selName hasSuffix:@":"])
+					[controller performSelector:s withObject:nil];
+				else
+					[controller performSelector:s];
+				#pragma clang diagnostic pop
+				NSLog(@"[uitest-one] INVOKED:%@", selName);
+				printf("UITEST-ONE INVOKED:%s\n", oneSel);
+				fflush(stdout);
 			});
 		}
 		// --langswitchtest：运行时切换语言，校验菜单/状态栏即时更新

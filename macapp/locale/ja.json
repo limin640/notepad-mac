@@ -23,6 +23,7 @@
   "Read Only File": "読み取り専用ファイル",
   "Read Only Mode": "読み取り専用モード",
   "Revert": "復帰",
+  "Are you sure you want to revert to the last saved version?": "最後に保存した版に戻してもよろしいですか？",
   "Reload": "再読み込み",
   "As UTF-8": "UTF-8 で",
   "As ANSI": "ANSI で",

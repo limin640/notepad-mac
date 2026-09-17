@@ -1979,10 +1979,24 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	}];
 }
 - (void)fileRevert {
-	if (_document.fileURL) {
-		[_document reloadWithEncoding:_document.currentEncoding];
-		[self refreshStatus];
+	if (_document.fileURL == nil) return;
+	// 有未保存修改时必须确认，否则误点会静默丢失全部修改
+	if (_document.dirty) {
+		NSAlert *a = [[NSAlert alloc] init];
+		a.messageText = NPL(@"Revert");
+		a.informativeText = NPL(@"Are you sure you want to revert to the last saved version?");
+		[a addButtonWithTitle:NPL(@"Revert")];
+		[a addButtonWithTitle:NPL(@"Cancel")];
+		[a beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+			if (r == NSAlertFirstButtonReturn) {
+				[self->_document reloadWithEncoding:self->_document.currentEncoding];
+				[self refreshStatus];
+			}
+		}];
+		return;
 	}
+	[_document reloadWithEncoding:_document.currentEncoding];
+	[self refreshStatus];
 }
 - (NSString *)documentPropertiesText {
 	ScintillaView *e = _document.editor;

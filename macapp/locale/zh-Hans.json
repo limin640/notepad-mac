@@ -23,6 +23,7 @@
   "Read Only File": "只读文件",
   "Read Only Mode": "只读模式",
   "Revert": "还原",
+  "Are you sure you want to revert to the last saved version?": "确定要还原到上次保存的版本吗？",
   "Reload": "重新载入",
   "As UTF-8": "按 UTF-8",
   "As ANSI": "按 ANSI",
