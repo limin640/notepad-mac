@@ -379,7 +379,16 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
  * Gets called by the runtime when the view needs repainting.
  */
 - (void) drawRect: (NSRect) rect {
+	if (rect.size.width < 1 || rect.size.height < 1) {
+		return;
+	}
+	if (!mOwner.backend) {
+		return;
+	}
 	CGContextRef context = CGContextCurrent();
+	if (!context) {
+		return;
+	}
 
 	if (!mOwner.backend->Draw(rect, context)) {
 		dispatch_async(dispatch_get_main_queue(), ^ {

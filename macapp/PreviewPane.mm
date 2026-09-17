@@ -432,14 +432,13 @@ static NSString *NPOutlineNav(NSString *html) {
 	NSArray *items = NPOutlineItems(html);
 	if (items.count == 0) return @"";
 	NSMutableString *nav = [NSMutableString string];
-	[nav appendFormat:@"<div class=\"np4-ol-title\">%@</div>", NPEscapeHTML(NPL(@"Outline"))];
+	[nav appendFormat:@"<button type=\"button\" class=\"np4-ol-title\" id=\"np4-ol-title\">%@</button>",
+		NPEscapeHTML(NPL(@"Outline"))];
 	for (NSDictionary *it in items) {
 		[nav appendFormat:
-			@"<div class=\"np4-ol-item\" data-ol-line=\"%@\" data-ol-level=\"%@\" style=\"padding-left:%ldpx\">"
-			@"<button type=\"button\" class=\"np4-ol-fold\" aria-label=\"fold\">▾</button>"
-			@"<a href=\"#np4-L%@\">%@</a></div>",
-			it[@"line"], it[@"level"], 4 + ([it[@"level"] integerValue] - 1) * 10,
-			it[@"line"], NPEscapeHTML(it[@"title"])];
+			@"<a class=\"np4-ol-item\" data-ol-line=\"%@\" data-ol-level=\"%@\" href=\"#np4-L%@\" style=\"padding-left:%ldpx\">%@</a>",
+			it[@"line"], it[@"level"], it[@"line"],
+			6 + ([it[@"level"] integerValue] - 1) * 8, NPEscapeHTML(it[@"title"])];
 	}
 	return nav;
 }
@@ -480,37 +479,49 @@ static NSString *NPHTMLKeptHead(NSString *src) {
 	return out;
 }
 
-static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BOOL editable, BOOL outlineOn) {
+static NSString *NPJSONString(NSString *s);
+
+static NSString *NPLibRef(NSURL *libDir, NSString *name) {
+	if (name.length == 0) return @"";
+	// libDir 为 nil（HTML 导出、markdown 暂存页）时用相对引用，
+	// 必须与 PreviewExport 的 np4-libs 子目录一致。
+	if (libDir == nil) return [@"np4-libs/" stringByAppendingString:name];
+	NSURL *u = [libDir URLByAppendingPathComponent:name];
+	return u.absoluteString ?: name;
+}
+
+static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BOOL editable, BOOL outlineOn, NSURL *libDir) {
 	NSString *bg = dark ? @"#1e1e1e" : @"#ffffff";
 	NSString *fg = dark ? @"#e6e6e6" : @"#222222";
-	NSString *codebg = dark ? @"#2a2a2a" : @"#f4f4f4";
+	NSString *codebg = dark ? @"#111318" : @"#f6f8fa";
+	NSString *codefg = dark ? @"#c9d1d9" : @"#1f2328";
+	NSString *codebd = dark ? @"#30363d" : @"#d0d7de";
 	NSString *link = dark ? @"#6cb6ff" : @"#0b57d0";
 	NSString *syncJS =
-		@"(function(){var s=document.getElementById('np4-scroller');if(s==null)return;"
+		@"(function(){var s=document.querySelector('.np4-md')||document.getElementById('np4-scroller');if(s==null)return;"
 		@"var kind=parseInt(document.body.getAttribute('data-np4-kind')||'0',10);"
-		@"if(kind!=1){window.np4ScrollToLine=function(){};return;}"
 		@"window._np4IgnoreScroll=false;"
+		@"function maxScroll(){var m=s.scrollHeight-s.clientHeight;return m<0?0:m;}"
 		@"function nodeY(el){var sr=s.getBoundingClientRect();var er=el.getBoundingClientRect();return er.top-sr.top+s.scrollTop;}"
-		@"function anchors(){var nodes=s.querySelectorAll('[data-src-line]');var out=[];"
-		@"for(var i=0;i<nodes.length;i++){var line=parseInt(nodes[i].getAttribute('data-src-line'),10);if(line>0)out.push({line:line,y:nodeY(nodes[i])});}return out;}"
-		@"window.np4ScrollToLine=function(line,lineCount){window._np4IgnoreScroll=true;"
-		@"var max=s.scrollHeight-s.clientHeight;if(max<0)max=0;var a=anchors();var y=0;"
-		@"if(a.length<1){var den=lineCount>1?(lineCount-1):1;y=max*((line-1)/den);}"
-		@"else if(line<=a[0].line){y=a[0].y;}"
-		@"else if(line>=a[a.length-1].line){y=a[a.length-1].y;}"
-		@"else{var i=0;while(i+1<a.length&&a[i+1].line<=line)i++;var p=a[i],n=a[i+1];"
-		@"var t=(n.line==p.line)?0:(line-p.line)/(n.line-p.line);y=p.y+(n.y-p.y)*t;}"
-		@"if(y<0)y=0;if(y>max)y=max;s.scrollTop=y;"
+		@"window.np4UpdateOutline=function(){var items=document.querySelectorAll('.np4-ol-item');if(!items.length)return;"
+		@"var heads=s.querySelectorAll('[data-src-line]');var y=s.scrollTop+16;var cur=0;var i;"
+		@"for(i=0;i<heads.length;i++){var line=parseInt(heads[i].getAttribute('data-src-line'),10);if(line>0&&nodeY(heads[i])<=y)cur=line;}"
+		@"for(i=0;i<items.length;i++)items[i].classList.toggle('np4-ol-active',parseInt(items[i].getAttribute('data-ol-line'),10)===cur);};"
+		@"window.np4SetOutline=function(on){document.body.classList.toggle('np4-hide-outline',!on);"
+		@"if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.np4preview)"
+		@"window.webkit.messageHandlers.np4preview.postMessage({kind:'outline',on:!!on});};"
+		@"window.np4ScrollToFrac=function(frac){window._np4IgnoreScroll=true;"
+		@"if(frac<0)frac=0;if(frac>1)frac=1;s.scrollTop=maxScroll()*frac;if(window.np4UpdateOutline)np4UpdateOutline();"
 		@"requestAnimationFrame(function(){window._np4IgnoreScroll=false;});};"
+		@"window.np4ScrollToLine=function(line,lineCount){var den=lineCount>1?(lineCount-1):1;window.np4ScrollToFrac((line-1)/den);};"
+		@"if(kind!=1)return;"
 		@"s.addEventListener('scroll',function(){if(window._np4IgnoreScroll)return;"
 		@"if(window._np4ScrollT)cancelAnimationFrame(window._np4ScrollT);"
 		@"window._np4ScrollT=requestAnimationFrame(function(){"
-		@"var max=s.scrollHeight-s.clientHeight;if(max<1)max=1;var frac=s.scrollTop/max;var a=anchors();var line=0;var top=s.scrollTop;"
-		@"if(a.length>=1){if(top<=a[0].y)line=a[0].line;else if(top>=a[a.length-1].y)line=a[a.length-1].line;"
-		@"else{var i=0;while(i+1<a.length&&a[i+1].y<=top)i++;var p=a[i],n=a[i+1];"
-		@"var t=(n.y==p.y)?0:(top-p.y)/(n.y-p.y);line=Math.round(p.line+(n.line-p.line)*t);}}"
+		@"var max=maxScroll();if(max<1)max=1;if(window.np4UpdateOutline)np4UpdateOutline();"
 		@"if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.np4preview)"
-		@"window.webkit.messageHandlers.np4preview.postMessage({kind:'scroll',frac:frac,line:line});});},{passive:true});})();";
+		@"window.webkit.messageHandlers.np4preview.postMessage({kind:'scroll',frac:s.scrollTop/max});});},{passive:true});"
+		@"if(window.np4UpdateOutline)np4UpdateOutline();})();";
 	NSString *editJS = @"";
 	if (editable) {
 		editJS =
@@ -524,17 +535,22 @@ static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BO
 			@"window.webkit.messageHandlers.np4preview.postMessage({html:html});"
 			@"},180);});";
 	}
-	NSString *enhanceJS =
+	NSString *enhanceJS = [NSString stringWithFormat:
 		@"window.np4Enhance=function(){"
-		@"try{if(window.mermaid){mermaid.initialize({startOnLoad:false,theme:document.body.classList.contains('dark')?'dark':'default'});"
+		@"try{"
+		@"if(window.mermaid){mermaid.initialize({startOnLoad:false,theme:document.body.classList.contains('dark')?'dark':'default'});"
 		@"document.querySelectorAll('pre.mermaid').forEach(function(el){if(el.getAttribute('data-np4-done'))return;"
-		@"el.setAttribute('data-np4-done','1');try{mermaid.run({nodes:[el]});}catch(e){}});}}"
+		@"el.setAttribute('data-np4-done','1');try{mermaid.run({nodes:[el]});}catch(e){}});}"
 		@"if(window.katex){document.querySelectorAll('.np4-math,.np4-math-block').forEach(function(el){"
 		@"if(el.getAttribute('data-np4-done'))return;el.setAttribute('data-np4-done','1');"
-		@"try{katex.render(el.textContent,el,{throwOnError:false,displayMode:el.classList.contains('np4-math-block')});}catch(e){}});}}"
+		@"try{katex.render(el.textContent,el,{throwOnError:false,displayMode:el.classList.contains('np4-math-block')});}catch(e){}});}"
 		@"}catch(e){}};"
-		@"window.np4LoadLib=function(src,css){if(css){var l=document.createElement('link');l.rel='stylesheet';l.href=css;document.head.appendChild(l);}"
-		@"var s=document.createElement('script');s.src=src;s.async=true;s.onload=function(){window.np4Enhance();};s.onerror=function(){};document.head.appendChild(s);};"
+		@"window.np4LoadLib=function(src,css){if(!src)return;"
+		@"if(css&&!document.querySelector('link[data-np4-lib=\"'+css+'\"]')){"
+		@"var l=document.createElement('link');l.rel='stylesheet';l.href=css;l.setAttribute('data-np4-lib',css);document.head.appendChild(l);}"
+		@"if(document.querySelector('script[data-np4-lib=\"'+src+'\"]')){if(window.katex||window.mermaid)window.np4Enhance();return;}"
+		@"var s=document.createElement('script');s.src=src;s.async=true;s.setAttribute('data-np4-lib',src);"
+		@"s.onload=function(){window.np4Enhance();};s.onerror=function(){};document.head.appendChild(s);};"
 		@"window.np4FoldHeading=function(h,force){if(!h||!/^H[1-6]$/.test(h.tagName))return;"
 		@"var lv=parseInt(h.tagName[1],10);var hide;"
 		@"if(force===true)hide=true;else if(force===false)hide=false;else hide=!h.classList.contains('np4-folded');"
@@ -543,49 +559,68 @@ static NSString *NPWrapPreview(NSString *body, BOOL dark, NPPreviewKind kind, BO
 		@"n.style.display=hide?'none':'';n=n.nextElementSibling;}};"
 		@"window.np4FoldOutline=function(fold){document.querySelectorAll('.np4-md h1,.np4-md h2,.np4-md h3,.np4-md h4,.np4-md h5,.np4-md h6')"
 		@".forEach(function(h){window.np4FoldHeading(h,fold);});};"
-		@"window.np4BindOutline=function(){var root=document.getElementById('np4-root');if(!root||root.getAttribute('data-ol-bound'))return;"
-		@"root.setAttribute('data-ol-bound','1');"
-		@"root.addEventListener('click',function(ev){var t=ev.target;if(!t)return;"
-		@"if(t.classList&&t.classList.contains('np4-ol-fold')){ev.preventDefault();"
-		@"var item=t.parentElement;var line=item&&item.getAttribute('data-ol-line');"
-		@"var h=line?document.getElementById('np4-L'+line):null;window.np4FoldHeading(h);t.textContent=h&&h.classList.contains('np4-folded')?'▸':'▾';return;}"
-		@"var a=t.closest?t.closest('.np4-ol-item a'):null;if(a){ev.preventDefault();"
+		@"window.np4BindOutline=function(){if(document.body.getAttribute('data-ol-bound'))return;"
+		@"document.body.setAttribute('data-ol-bound','1');"
+		@"document.addEventListener('click',function(ev){var t=ev.target;if(!t)return;"
+		@"if(t.id==='np4-ol-tab'){ev.preventDefault();if(window.np4SetOutline)np4SetOutline(true);return;}"
+		@"if(t.id==='np4-ol-title'||(t.classList&&t.classList.contains('np4-ol-title'))){ev.preventDefault();if(window.np4SetOutline)np4SetOutline(false);return;}"
+		@"var a=t.closest?t.closest('a.np4-ol-item'):null;if(a){ev.preventDefault();"
 		@"var id=(a.getAttribute('href')||'').replace('#','');var el=document.getElementById(id);"
-		@"if(el)el.scrollIntoView({block:'start'});}});"
+		@"if(el)el.scrollIntoView({block:'start'});if(window.np4UpdateOutline)np4UpdateOutline();}});"
 		@"};"
 		@"window.np4BindOutline();"
-		@"if(document.querySelector('.mermaid,.np4-math,.np4-math-block')){"
-		@"window.np4LoadLib('katex.min.js','katex.min.css');"
-		@"window.np4LoadLib('mermaid.min.js',null);}";
+		@"window.np4EnsureLibs=function(){"
+		@"if(!document.querySelector('.mermaid,.np4-math,.np4-math-block')){"
+		@"if(window.np4Enhance)np4Enhance();return;}"
+		@"window.np4LoadLib(%@,%@);window.np4LoadLib(%@,null);};"
+		@"window.np4EnsureLibs();",
+		NPJSONString(NPLibRef(libDir, @"katex.min.js")),
+		NPJSONString(NPLibRef(libDir, @"katex.min.css")),
+		NPJSONString(NPLibRef(libDir, @"mermaid.min.js"))];
 	NSString *allJS = [[syncJS stringByAppendingString:editJS] stringByAppendingString:enhanceJS];
 	NSString *bodyClass = [NSString stringWithFormat:@"%@%@", dark ? @"dark" : @"light",
 		outlineOn ? @"" : @" np4-hide-outline"];
+	// 大纲重开按钮只有 markdown 预览有真实大纲可展开；HTML/其他 kind
+	// 大纲关闭时不该露出按钮（点了只会静默改全局状态）。
+	NSString *olTab = @"";
+	if (kind == NPPreviewMarkdown)
+		olTab = [NSString stringWithFormat:@"<button type=\"button\" id=\"np4-ol-tab\">%@</button>",
+			NPEscapeHTML(NPL(@"Outline"))];
 	return [NSString stringWithFormat:
 		@"<!doctype html><html><head><meta charset=\"utf-8\">"
 		@"<style>html,body{height:100%%;margin:0;padding:0;overflow:hidden;overflow-anchor:none;background:%@;color:%@;}"
 		@"#np4-scroller{height:100%%;overflow:auto;overflow-anchor:none;scrollbar-gutter:stable;}"
-		@"#np4-scroller::-webkit-scrollbar{width:11px;height:11px;}"
-		@"#np4-scroller::-webkit-scrollbar-thumb{background:rgba(127,127,127,.4);border-radius:6px;}"
-		@"#np4-root{font:14px/1.55 -apple-system,BlinkMacSystemFont,sans-serif;padding:12px 16px 16px 16px;min-height:100%%;}"
-		@"#np4-root:has(> .np4-outline){display:flex;gap:12px;}"
-		@"#np4-root .np4-outline{flex:0 0 150px;max-height:100%%;overflow:auto;font-size:12px;line-height:1.4;border-right:1px solid rgba(127,127,127,.25);padding-right:8px;}"
-		@"#np4-root .np4-md{flex:1;min-width:0;}"
-		@"body.np4-hide-outline #np4-root{display:block;}"
+		@"#np4-scroller:has(.np4-md){overflow:hidden;}"
+		@"#np4-scroller::-webkit-scrollbar,.np4-md::-webkit-scrollbar,.np4-outline::-webkit-scrollbar{width:11px;height:11px;}"
+		@"#np4-scroller::-webkit-scrollbar-thumb,.np4-md::-webkit-scrollbar-thumb,.np4-outline::-webkit-scrollbar-thumb{background:rgba(127,127,127,.4);border-radius:6px;}"
+		@"#np4-root{font:14px/1.55 -apple-system,BlinkMacSystemFont,sans-serif;padding:12px 16px 16px 16px;min-height:100%%;box-sizing:border-box;}"
+		@"#np4-root:has(> .np4-outline){display:flex;gap:0;height:100%%;min-height:0;padding:0;overflow:hidden;}"
+		@"#np4-root .np4-outline{flex:0 0 112px;width:112px;height:100%%;overflow:auto;font-size:12px;line-height:1.45;border-right:1px solid rgba(127,127,127,.22);padding:10px 8px;box-sizing:border-box;}"
+		@"#np4-root .np4-md{flex:1;min-width:0;height:100%%;overflow:auto;overflow-anchor:none;padding:14px 20px 20px 16px;box-sizing:border-box;}"
+		@"#np4-ol-tab{display:none;position:absolute;left:8px;top:6px;z-index:2;height:22px;padding:0 8px;border:1px solid rgba(127,127,127,.28);border-radius:4px;background:transparent;color:inherit;cursor:pointer;font:12px/22px -apple-system,BlinkMacSystemFont,sans-serif;}"
+		@"body.np4-hide-outline #np4-root{display:block;height:100%%;padding:34px 16px 12px 16px;}"
 		@"body.np4-hide-outline .np4-outline{display:none;}"
-		@".np4-ol-title{font-weight:600;margin-bottom:6px;opacity:.75}"
-		@".np4-ol-item{margin:2px 0;display:flex;gap:4px;align-items:flex-start;}"
-		@".np4-ol-fold{border:0;background:transparent;color:inherit;padding:0;cursor:pointer;width:14px;}"
-		@".np4-ol-item a{color:inherit;text-decoration:none}"
+		@"body.np4-hide-outline .np4-md{height:100%%;overflow:auto;padding:0;}"
+		@"body.np4-hide-outline #np4-ol-tab{display:inline-block;}"
+		// AXPress/程序性聚焦会匹配 :focus-visible，不能给它画环；active 类已标示当前项。
+		@"a.np4-ol-item:focus,a.np4-ol-item:focus-visible{outline:none}"
+		@".np4-ol-title{display:block;width:100%%;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;text-align:left;margin:0 0 8px;padding:0;opacity:.7;cursor:pointer}"
+		@"a.np4-ol-item{display:block;margin:0 0 4px;color:inherit;text-decoration:none;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:2px solid transparent;}"
+		@"a.np4-ol-item.np4-ol-active{font-weight:600;opacity:1;border-left-color:currentColor}"
 		@".np4-math,.np4-math-block{font-family:Menlo,monospace}"
 		@".np4-math-block{display:block;margin:8px 0;overflow:auto}"
-		@"h1,h2,h3{line-height:1.25} pre{background:%@;padding:10px;overflow:auto;border-radius:6px;}"
-		@"code{font-family:Menlo,monospace;font-size:12px} pre code{font-size:12px}"
+		@"h1,h2,h3{line-height:1.25}"
+		@"pre,code{background:%@;color:%@;}"
+		@"pre{padding:10px;overflow:auto;border-radius:6px;border:1px solid %@;}"
+		@"code{font-family:Menlo,monospace;font-size:12px;padding:.1em .35em;border-radius:4px;}"
+		@"pre code{background:transparent;color:inherit;padding:0;border:0;font-size:12px}"
 		@"a{color:%@} img{max-width:100%%} table{border-collapse:collapse}"
 		@"th,td{border:1px solid rgba(127,127,127,.45);padding:4px 8px}"
 		@"blockquote{margin:0 0 0 8px;padding-left:10px;border-left:3px solid rgba(127,127,127,.5);color:inherit;opacity:.9}"
 		@".np4-empty{opacity:.55;margin-top:36px;text-align:center}</style></head>"
-		@"<body class=\"%@\" data-np4-kind=\"%ld\" data-np4-libs=\"local\"><div id=\"np4-scroller\"><div id=\"np4-root\">%@</div></div><script>%@</script></body></html>",
-		bg, fg, codebg, link, bodyClass, (long)kind, body, allJS];
+		@"<body class=\"%@\" data-np4-kind=\"%ld\" data-np4-libs=\"local\">"
+		@"%@<div id=\"np4-scroller\"><div id=\"np4-root\">%@</div></div><script>%@</script></body></html>",
+		bg, fg, codebg, codefg, codebd, link, bodyClass, (long)kind, olTab, body, allJS];
 }
 
 static NSString *NPJSONString(NSString *s) {
@@ -667,6 +702,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	NSString *_lastHTML;
 	NSString *_lastPage;
 	NSString *_lastSrc;
+	NSURL *_lastBase;
 	NSString *_loadedPath;
 	BOOL _headless;
 	BOOL _pageReady;
@@ -677,8 +713,8 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	NSInteger _loadGen;
 	NSInteger _lastSyncLine;
 	CGFloat _lastSyncFrac;
-	NSInteger _pendingLine;
-	NSInteger _pendingCount;
+	CGFloat _pendingFrac;
+	BOOL _hasPendingFrac;
 	BOOL _outlineOn;
 }
 
@@ -718,12 +754,46 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	[self.bottomAnchor constraintEqualToAnchor:v.bottomAnchor].active = YES;
 }
 
+- (NSURL *)previewStagingDirectory {
+	NSString *p = [NSTemporaryDirectory() stringByAppendingPathComponent:@"np4-preview-load"];
+	NSString *libs = [p stringByAppendingPathComponent:@"np4-libs"];
+	NSFileManager *fm = [NSFileManager defaultManager];
+	NSURL *src = [PreviewPane previewLibraryURL];
+	[fm createDirectoryAtPath:p withIntermediateDirectories:YES attributes:nil error:nil];
+	if (src && ![fm fileExistsAtPath:[libs stringByAppendingPathComponent:@"katex.min.js"]]) {
+		[fm createDirectoryAtPath:libs withIntermediateDirectories:YES attributes:nil error:nil];
+		for (NSString *name in @[@"katex.min.js", @"katex.min.css", @"mermaid.min.js", @"fonts"]) {
+			NSURL *from = [src URLByAppendingPathComponent:name];
+			NSURL *to = [NSURL fileURLWithPath:[libs stringByAppendingPathComponent:name]];
+			[fm removeItemAtURL:to error:nil];
+			[fm copyItemAtURL:from toURL:to error:nil];
+		}
+	}
+	return [NSURL fileURLWithPath:p];
+}
+
+- (void)loadPreviewPage:(NSString *)page kind:(NPPreviewKind)kind base:(NSURL *)base {
+	if (_web == nil) return;
+	if (kind == NPPreviewMarkdown && [PreviewPane previewLibraryURL] != nil) {
+		NSURL *dir = [self previewStagingDirectory];
+		// 每个 webview 一个文件名：多窗口（乃至双开 app 实例）共用暂存目录，
+		// 固定名会让 A 窗口 load 到 B 窗口刚写入的页面。
+		NSURL *html = [dir URLByAppendingPathComponent:
+			[NSString stringWithFormat:@"page-%p.html", _web]];
+		[page writeToURL:html atomically:YES encoding:NSUTF8StringEncoding error:nil];
+		[_web loadFileURL:html allowingReadAccessToURL:dir];
+		return;
+	}
+	[_web loadHTMLString:page baseURL:base];
+}
+
 - (void)ensureWeb {
 	if (_headless || _web) return;
 	WKWebViewConfiguration *cfg = [[WKWebViewConfiguration alloc] init];
 	cfg.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
 	[cfg.userContentController addScriptMessageHandler:self name:@"np4preview"];
 	@try { [cfg.preferences setValue:@YES forKey:@"allowFileAccessFromFileURLs"]; } @catch (id e) {}
+	@try { [cfg.preferences setValue:@YES forKey:@"allowUniversalAccessFromFileURLs"]; } @catch (id e) {}
 	_web = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:cfg];
 	_web.navigationDelegate = self;
 	NPApplyLegacyScrollers(_web);
@@ -750,14 +820,17 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 		_imageView = nil;
 	}
 	self.onHTMLEdited = nil;
+	self.onPreviewScroll = nil;
+	self.onOutlineToggle = nil;
 }
 
 - (NSString *)lastHTML { return _lastHTML ?: @""; }
 - (NSString *)lastPageHTML { return _lastPage ?: @""; }
+- (NSURL *)lastPreviewBaseURL { return _lastBase; }
 - (BOOL)lastRefreshInPlace { return _lastRefreshInPlace; }
 - (BOOL)lastRefreshDidScroll { return _lastRefreshDidScroll; }
 - (BOOL)previewUsesLineMap {
-	return _loadedKind == NPPreviewMarkdown && [_lastHTML containsString:@"data-src-line"];
+	return NO;
 }
 - (NSInteger)lastSyncLine { return _lastSyncLine; }
 - (CGFloat)lastSyncFrac { return _lastSyncFrac; }
@@ -778,22 +851,28 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 }
 - (void)applyPendingPreviewScroll {
 	if (_headless || _web == nil || _pageReady == NO) return;
-	if (_pendingCount <= 0) return;
-	NSInteger line1 = _pendingLine + 1;
-	NSString *js = [NSString stringWithFormat:@"if(window.np4ScrollToLine)np4ScrollToLine(%ld,%ld);",
-		(long)line1, (long)_pendingCount];
+	if (_hasPendingFrac == NO) return;
+	NSString *js = [NSString stringWithFormat:@"if(window.np4ScrollToFrac)np4ScrollToFrac(%0.6f);",
+		(double)_pendingFrac];
 	[_web evaluateJavaScript:js completionHandler:nil];
+}
+- (void)scrollPreviewToFraction:(CGFloat)frac {
+	if (_loadedKind != NPPreviewMarkdown) return;
+	if (frac < 0) frac = 0;
+	if (frac > 1) frac = 1;
+	_lastSyncFrac = frac;
+	_pendingFrac = frac;
+	_hasPendingFrac = YES;
+	if (_headless) return;
+	[self applyPendingPreviewScroll];
 }
 - (void)scrollPreviewToSourceLine:(NSInteger)line lineCount:(NSInteger)lineCount {
 	if (_loadedKind != NPPreviewMarkdown) return;
 	if (line < 0) line = 0;
 	if (lineCount < 1) lineCount = 1;
 	_lastSyncLine = line;
-	_lastSyncFrac = (lineCount > 1) ? ((CGFloat)line / (CGFloat)(lineCount - 1)) : 0;
-	_pendingLine = line;
-	_pendingCount = lineCount;
-	if (_headless) return;
-	[self applyPendingPreviewScroll];
+	CGFloat frac = (lineCount > 1) ? ((CGFloat)line / (CGFloat)(lineCount - 1)) : 0;
+	[self scrollPreviewToFraction:frac];
 }
 
 + (NPPreviewKind)kindForDocument:(EditorDocument *)doc {
@@ -814,12 +893,12 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 
 + (NSString *)wrapPreviewBody:(NSString *)body dark:(BOOL)dark kind:(NPPreviewKind)kind
 	editable:(BOOL)editable outline:(BOOL)outline {
-	return NPWrapPreview(body ?: @"", dark, kind, editable, outline);
+	return NPWrapPreview(body ?: @"", dark, kind, editable, outline, nil);
 }
 
 + (NSString *)pageHTMLFromMarkdown:(NSString *)markdown dark:(BOOL)dark outline:(BOOL)outline {
 	NSString *md = NPMarkdownToHTML(markdown ?: @"");
-	return NPWrapPreview(NPComposeMarkdownBody(md), dark, NPPreviewMarkdown, NO, outline);
+	return NPWrapPreview(NPComposeMarkdownBody(md), dark, NPPreviewMarkdown, NO, outline, nil);
 }
 
 + (NSArray<NSDictionary *> *)outlineFromMarkdown:(NSString *)markdown {
@@ -834,6 +913,27 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	if ([[NSFileManager defaultManager] fileExistsAtPath:src])
 		return [NSURL fileURLWithPath:src];
 	return nil;
+}
+
++ (NSURL *)previewBaseURLForDocument:(EditorDocument *)doc {
+	// Markdown 图已嵌成 data URI，base 必须是预览库目录，WKWebView 才肯加载相对路径的 KaTeX/Mermaid
+	if ([self kindForDocument:doc] != NPPreviewHTML) {
+		NSURL *lib = [self previewLibraryURL];
+		if (lib) return lib;
+	}
+	if (doc.fileURL == nil) return nil;
+	return [doc.fileURL.URLByDeletingLastPathComponent URLByStandardizingPath];
+}
+
++ (NSString *)inPlaceRefreshJavaScriptWithBody:(NSString *)body {
+	return [NSString stringWithFormat:
+		@"(function(){var r=document.getElementById('np4-root');if(!r)return '0';"
+		@"r.innerHTML=%@;"
+		@"if(window.np4BindOutline)np4BindOutline();"
+		@"if(window.np4UpdateOutline)np4UpdateOutline();"
+		@"if(window.np4EnsureLibs)np4EnsureLibs();"
+		@"else if(window.np4Enhance)np4Enhance();return '1';})()",
+		NPJSONString(body)];
 }
 
 + (BOOL)hasLocalPreviewLibraries {
@@ -903,6 +1003,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 		} else {
 			body = src.length ? src : [NSString stringWithFormat:@"<p class=\"np4-empty\">%@</p>", NPEscapeHTML(NPL(@"Empty document"))];
 		}
+		if (doc.fileURL) body = NPEmbedLocalImages(body, doc.fileURL);
 	} else if (kind == NPPreviewImage) {
 		hint = NPL(@"Image preview");
 		NSURL *url = doc.fileURL;
@@ -918,10 +1019,18 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 		body = [NSString stringWithFormat:@"<p class=\"np4-empty\">%@</p>", NPEscapeHTML(hint)];
 	}
 	_hint.stringValue = hint;
-	NSString *page = NPWrapPreview(body ?: @"", dark, kind, editable, _outlineOn);
+	NSURL *base = [PreviewPane previewBaseURLForDocument:doc];
+	NSURL *libDir = nil;
+	// HTML 预览的 base 必须是文档目录（相对图片才显示），KaTeX/Mermaid
+	// 因此走绝对库引用；其余 kind 的 base 已是库目录或走暂存页相对引用。
+	if ([PreviewPane previewLibraryURL] != nil
+		&& ![base.path isEqualToString:[PreviewPane previewLibraryURL].path])
+		libDir = [PreviewPane previewLibraryURL];
+	NSString *page = NPWrapPreview(body ?: @"", dark, kind, editable, _outlineOn, libDir);
 	_lastHTML = [PreviewPane htmlForDocument:doc];
 	_lastPage = page;
 	_lastSrc = [src copy];
+	_lastBase = base;
 	const BOOL sameDoc = [_loadedPath isEqualToString:path];
 	const BOOL sameShell = _pageReady && sameDoc && _loadedKind == kind && _loadedDark == dark
 		&& kind != NPPreviewImage;
@@ -954,14 +1063,9 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	}
 	[self ensureWeb];
 	_web.hidden = NO;
-	NSURL *base = [PreviewPane previewLibraryURL] ?: doc.fileURL.URLByDeletingLastPathComponent;
 	if (sameShell) {
 		_lastRefreshInPlace = YES;
-		NSString *js = [NSString stringWithFormat:
-			@"(function(){var r=document.getElementById('np4-root');if(!r)return '0';"
-			@"r.removeAttribute('data-ol-bound');r.innerHTML=%@;"
-			@"if(window.np4BindOutline)np4BindOutline();if(window.np4Enhance)np4Enhance();return '1';})()",
-			NPJSONString(body)];
+		NSString *js = [PreviewPane inPlaceRefreshJavaScriptWithBody:body];
 		__weak typeof(self) weakSelf = self;
 		[_web evaluateJavaScript:js completionHandler:^(id res, NSError *err) {
 			(void)err;
@@ -970,7 +1074,7 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 			BOOL ok = [res isKindOfClass:[NSString class]] && [res isEqualToString:@"1"];
 			if (ok == NO) {
 				s->_lastRefreshInPlace = NO;
-				[s->_web loadHTMLString:page baseURL:base];
+				[s loadPreviewPage:page kind:s->_loadedKind base:base];
 			}
 		}];
 		return;
@@ -980,13 +1084,21 @@ static NSString *NPEmbedLocalImages(NSString *html, NSURL *fileURL) {
 	_loadedKind = kind;
 	_loadedDark = dark;
 	_loadedPath = [path copy];
-	[_web loadHTMLString:page baseURL:base];
+	[self loadPreviewPage:page kind:kind base:base];
 }
 
 - (void)userContentController:(WKUserContentController *)c didReceiveScriptMessage:(WKScriptMessage *)message {
 	(void)c;
 	id body = message.body;
 	if ([body isKindOfClass:[NSDictionary class]]) {
+		if ([body[@"kind"] isEqualToString:@"outline"]) {
+			BOOL on = [body[@"on"] boolValue];
+			if (_outlineOn != on) {
+				_outlineOn = on;
+				if (self.onOutlineToggle) self.onOutlineToggle(on);
+			}
+			return;
+		}
 		if ([body[@"kind"] isEqualToString:@"scroll"] || body[@"frac"] != nil) {
 			if (_loadedKind != NPPreviewMarkdown) return;
 			NSInteger srcLine = [body[@"line"] integerValue];

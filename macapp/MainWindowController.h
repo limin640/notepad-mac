@@ -62,6 +62,7 @@
 - (BOOL)previewOn;
 - (NSString *)previewHTML;
 - (NSString *)previewLastPageHTML;
+- (NSURL *)previewLastBaseURL;
 - (BOOL)previewLastRefreshInPlace;
 - (BOOL)previewLastRefreshDidScroll;
 - (BOOL)previewUsesLineMap;
@@ -80,6 +81,7 @@
 - (BOOL)setPreviewSplitPosition:(CGFloat)pos;
 - (NSButton *)previewStatusButton;
 - (NSButton *)fileTreeStatusButton;
+- (NSButton *)outlineStatusButton;
 - (NSString *)statusBarTextAtIndex:(NSUInteger)i;
 + (NSArray *)liveControllers;
 + (NSInteger)liveControllerCount;

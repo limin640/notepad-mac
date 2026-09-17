@@ -689,7 +689,8 @@ void LineLayoutCache::AllocateForLevel(Sci::Line linesOnScreen, Sci::Line linesI
 	size_t lengthForLevel = 2; // LineCache::Caret, LineCache::None
 	if (level == LineCache::Page) {
 		// see comment in Retrieve() method.
-		lengthForLevel = 1 + NP2_align_up(4*linesOnScreen, 64);
+		// linesOnScreen==0 时 align_up(0,64)==0，cache.size()==1，后面 gap=0 会取模 0。
+		lengthForLevel = 1 + NP2_align_up(4 * std::max<Sci::Line>(linesOnScreen, 1), 64);
 	} else if (level == LineCache::Document) {
 		lengthForLevel = NP2_align_up(linesInDoc, 64);
 	}
@@ -746,10 +747,14 @@ std::shared_ptr<LineLayout> LineLayoutCache::Retrieve(Sci::Line lineNumber, Sci:
 		// TODO: use/cleanup second arena after some periods, e.g. after Editor::WrapLines() finished.
 		const size_t diff = std::abs(lineNumber - topLine);
 		const size_t gap = cache.size() / 2;
-		pos = 1 + (lineNumber % gap) + ((diff < gap) ? 0 : gap);
+		if (gap == 0) {
+			pos = 0;
+		} else {
+			pos = 1 + (lineNumber % gap) + ((diff < gap) ? 0 : gap);
+		}
 		// first slot reserved for caret line, which is rapidly retrieved when caret blinking.
 		if (lineNumber == lineCaret) {
-			if (lastCaretSlot == 0 && cache[0]->LineNumber() == lineCaret) {
+			if (lastCaretSlot == 0 && cache[0] && cache[0]->LineNumber() == lineCaret) {
 				pos = 0;
 			} else {
 				lastCaretSlot = pos;

@@ -122,7 +122,16 @@ static void LoadDarkThemeOverrides(void) {
 	NSString *path = [[NSBundle mainBundle] pathForResource:@"Notepad4 DarkTheme" ofType:@"ini"];
 	if (!path) { gThemeOverrides = all; return; }
 	NSData *data = [NSData dataWithContentsOfFile:path];
-	NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF16StringEncoding];
+	const uint8_t *b = (const uint8_t *)data.bytes;
+	NSString *text = nil;
+	if (data.length >= 2 && b[0] == 0xFF && b[1] == 0xFE)
+		text = [[NSString alloc] initWithData:data encoding:NSUTF16LittleEndianStringEncoding];
+	else if (data.length >= 2 && b[0] == 0xFE && b[1] == 0xFF)
+		text = [[NSString alloc] initWithData:data encoding:NSUTF16BigEndianStringEncoding];
+	else if (data.length >= 2 && b[1] == 0)
+		text = [[NSString alloc] initWithData:data encoding:NSUTF16LittleEndianStringEncoding];
+	else if (data.length >= 2 && b[0] == 0)
+		text = [[NSString alloc] initWithData:data encoding:NSUTF16BigEndianStringEncoding];
 	if (!text) text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 	if (!text) { gThemeOverrides = all; return; }
 
@@ -228,6 +237,18 @@ static void LoadDarkThemeOverrides(void) {
 		}
 	}
 
+	if (dark && lex->iLexer == SCLEX_MARKDOWN) {
+		// 暗色代码块必须深底浅字。浅灰底 + 白字是浅色主题残留，几乎看不见。
+		static const unsigned kMdCode[] = {
+			SCE_MARKDOWN_INDENTED_BLOCK, SCE_MARKDOWN_BACKTICK_BLOCK, SCE_MARKDOWN_TILDE_BLOCK,
+			SCE_MARKDOWN_CODE_SPAN,
+			SCE_MARKDOWN_DISPLAY_MATH, SCE_MARKDOWN_BACKTICK_MATH, SCE_MARKDOWN_TILDE_MATH,
+			SCE_MARKDOWN_INLINE_MATH, SCE_MARKDOWN_INLINE_DISPLAY_MATH, SCE_MARKDOWN_MATH_SPAN,
+		};
+		for (unsigned st : kMdCode)
+			[self applyStyleValue:@"fore:#C9D1D9; back:#111318; eolfilled" toStyle:st editor:editor];
+	}
+
 	// 5. 小文件立刻着色；大文件交给 idle styling（对照 Windows Style_SetLexer）
 	const sptr_t n = [editor message:SCI_GETLENGTH];
 	if (n > 0 && n < 262144)
@@ -273,8 +294,7 @@ static void LoadDarkThemeOverrides(void) {
 			} else if ([tok isEqualToString:@"eolfilled"]) {
 				[editor setGeneralProperty:SCI_STYLESETEOLFILLED parameter:st value:1];
 			} else if ([tok hasPrefix:@"size:"]) {
-				int sz = [tok substringFromIndex:5].intValue;
-				if (sz > 0) [editor setGeneralProperty:SCI_STYLESETSIZE parameter:st value:sz];
+				// 单样式改字号会让折行行高错位，Scintilla 绘制时会崩，这里不用。
 			} else if ([tok hasPrefix:@"font:"]) {
 				NSString *fname = [tok substringFromIndex:5];
 				if (![fname hasPrefix:@"$("]) {

@@ -437,16 +437,19 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 	[NPLiveControllers() removeObject:c];
 }
 - (BOOL)windowIsUsable {
+	// 未关就算可用。启动瞬间窗口还没 visible，旧逻辑会再 new 一扇，
+	// 随后 Space/缩放动画释放时踩空（_NSWindowTransformAnimation dealloc）。
 	if (_windowClosed) return NO;
-	if (self.isWindowLoaded == NO) return NO;
-	if ([self runningHeadless]) return YES;
-	return self.window.isVisible;
+	return self.isWindowLoaded;
 }
 - (void)presentWindow {
 	if ([self runningHeadless]) return;
 	if (self.isWindowLoaded == NO) return;
+	[NSAnimationContext beginGrouping];
+	[NSAnimationContext currentContext].duration = 0;
 	[self showWindow:nil];
-	[self.window orderFrontRegardless];
+	[self.window orderFront:nil];
+	[NSAnimationContext endGrouping];
 }
 
 - (instancetype)init {
@@ -462,7 +465,8 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 	if (self) {
 		win.delegate = self;
 		win.windowController = self;
-		win.releasedWhenClosed = YES;
+		win.releasedWhenClosed = NO;
+		win.animationBehavior = NSWindowAnimationBehaviorNone;
 		[MainWindowController registerLive:self];
 		_document = [[EditorDocument alloc] initWithNewUntitled:1];
 		_documents = [NSMutableArray arrayWithObject:_document];
@@ -644,6 +648,13 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 		MainWindowController *s = weakSelf;
 		if (s == nil || s->_previewSyncing) return;
 		[s applyPreviewScrollLine:srcLine fraction:frac];
+	};
+	_previewPane.onOutlineToggle = ^(BOOL on) {
+		MainWindowController *s = weakSelf;
+		if (s == nil) return;
+		s->_outlineItem.state = on ? NSControlStateValueOn : NSControlStateValueOff;
+		[s->_statusBar setOutlineActive:on];
+		[s persistSettings];
 	};
 	_document.editor.translatesAutoresizingMaskIntoConstraints = NO;
 	[_editorHost addSubview:_document.editor];
@@ -1818,6 +1829,7 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	[_statusBar updateForDocument:_document];
 	[_statusBar setPreviewActive:_previewOn];
 	[_statusBar setFileTreeActive:_fileTreeOn];
+	[_statusBar setOutlineActive:[_previewPane outlineVisible]];
 }
 
 // 对照 Notepad4 UpdateWindowTitle(): "* " + "文件名 [目录]" + " - Notepad4"
@@ -2369,6 +2381,7 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 }
 - (NSButton *)previewStatusButton { return _statusBar.previewButton; }
 - (NSButton *)fileTreeStatusButton { return _statusBar.fileTreeButton; }
+- (NSButton *)outlineStatusButton { return _statusBar.outlineButton; }
 - (NSString *)statusBarTextAtIndex:(NSUInteger)i {
 	[_statusBar updateForDocument:_document];
 	return [_statusBar cellTextAtIndex:i];
@@ -2449,6 +2462,7 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 	BOOL on = ![_previewPane outlineVisible];
 	[_previewPane setOutlineVisible:on];
 	_outlineItem.state = on ? NSControlStateValueOn : NSControlStateValueOff;
+	[_statusBar setOutlineActive:on];
 	[self persistSettings];
 }
 - (BOOL)previewOutlineVisible { return [_previewPane outlineVisible]; }
@@ -2484,6 +2498,7 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 - (BOOL)previewOn { return _previewOn; }
 - (NSString *)previewHTML { return [PreviewPane htmlForDocument:_document] ?: @""; }
 - (NSString *)previewLastPageHTML { return [_previewPane lastPageHTML] ?: @""; }
+- (NSURL *)previewLastBaseURL { return [_previewPane lastPreviewBaseURL]; }
 - (BOOL)previewLastRefreshInPlace { return [_previewPane lastRefreshInPlace]; }
 - (BOOL)previewLastRefreshDidScroll { return [_previewPane lastRefreshDidScroll]; }
 - (BOOL)previewUsesLineMap { return [_previewPane previewUsesLineMap]; }
@@ -2510,26 +2525,26 @@ static NSString *NPLineCommentPrefix(const EDITLEXER *lex) {
 	ScintillaView *e = _document.editor;
 	const NSInteger first = (NSInteger)[e message:SCI_GETFIRSTVISIBLELINE];
 	const NSInteger n = (NSInteger)[e message:SCI_GETLINECOUNT];
+	const NSInteger vis = (NSInteger)[e message:SCI_LINESONSCREEN];
+	const NSInteger span = (n > vis) ? (n - vis) : 0;
+	const CGFloat frac = (span > 0) ? ((CGFloat)first / (CGFloat)span) : 0;
 	_previewSyncing = YES;
 	[_previewPane scrollPreviewToSourceLine:first lineCount:n];
+	[_previewPane scrollPreviewToFraction:frac];
 	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(endPreviewSync) object:nil];
 	[self performSelector:@selector(endPreviewSync) withObject:nil afterDelay:0.08];
 }
 - (void)applyPreviewScrollLine:(NSInteger)line fraction:(CGFloat)frac {
+	(void)line;
 	if (_previewOn == NO || _document == nil) return;
 	if ([self previewScrollLinked] == NO) return;
 	ScintillaView *e = _document.editor;
 	const sptr_t n = [e message:SCI_GETLINECOUNT];
 	const sptr_t vis = [e message:SCI_LINESONSCREEN];
-	sptr_t dest = 0;
-	if (line > 0) {
-		dest = (sptr_t)line - 1;
-	} else {
-		const sptr_t span = (n > vis) ? (n - vis) : 0;
-		if (frac < 0) frac = 0;
-		if (frac > 1) frac = 1;
-		dest = (sptr_t)((frac * (CGFloat)span) + 0.5);
-	}
+	if (frac < 0) frac = 0;
+	if (frac > 1) frac = 1;
+	const sptr_t span = (n > vis) ? (n - vis) : 0;
+	sptr_t dest = (sptr_t)((frac * (CGFloat)span) + 0.5);
 	if (dest < 0) dest = 0;
 	if (n > 0 && dest >= n) dest = n - 1;
 	_lastAppliedEditorLineFromPreview = (NSInteger)dest;
@@ -3109,6 +3124,7 @@ static NSColor *NPColorFromBGR(long v) {
 	const BOOL ol = NPPrefBool(@"NP4ShowOutline", YES);
 	[_previewPane setOutlineVisible:ol];
 	_outlineItem.state = ol ? NSControlStateValueOn : NSControlStateValueOff;
+	[_statusBar setOutlineActive:ol];
 	NSString *fs = [[NSUserDefaults standardUserDefaults] stringForKey:@"NP4WindowFrame"];
 	if (fs.length) {
 		NSRect r = NSRectFromString(fs);

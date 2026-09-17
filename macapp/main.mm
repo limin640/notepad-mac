@@ -8,6 +8,7 @@
 //   --closetest                                                验证关闭窗口行为
 #import <Cocoa/Cocoa.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <QuartzCore/QuartzCore.h>
 #include <dlfcn.h>
 #include <cstring>
 #import "MainWindowController.h"
@@ -47,6 +48,49 @@ static void NPCacheShot(NSView *v, NSString *path) {
 	if (!rep) return;
 	[v cacheDisplayInRect:b toBitmapImageRep:rep];
 	[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+}
+
+// 真实长文档冒烟路径：优先本地 CONTRIBUTING.md，回退仓库根 README.md；
+// 都没有（如 app 装到 /Applications 后跑测试）就返回 nil，让用例跳过。
+static NSString *NPRealWorldMarkdownPath(void) {
+	NSString *personal = @"/Users/limin/Documents/ceshi/xiaohonghsu-image/CONTRIBUTING.md";
+	if ([[NSFileManager defaultManager] fileExistsAtPath:personal]) return personal;
+	NSString *exe = [[NSBundle mainBundle] executablePath] ?: @"";
+	NSString *dir = exe;
+	// build/Notepad.app/Contents/MacOS/<bin> → 仓库根，共 5 级
+	for (int i = 0; i < 5 && dir.length; i++)
+		dir = [dir stringByDeletingLastPathComponent];
+	if (dir.length == 0 || [dir isEqualToString:@"/"]) return nil;
+	NSString *readme = [[dir stringByAppendingPathComponent:@"README.md"] stringByStandardizingPath];
+	if ([[NSFileManager defaultManager] fileExistsAtPath:readme]) return readme;
+	return nil;
+}
+
+// 无头 cacheDisplay 不一定走进 SCIContentView.drawRect（layer-backed）。
+// 用户崩溃走的就是 drawRect → PaintText，所以审计必须真画。
+static NSView *NPFindViewClass(NSView *root, NSString *cls) {
+	if (!root) return nil;
+	if ([NSStringFromClass(root.class) isEqualToString:cls]) return root;
+	for (NSView *s in root.subviews) {
+		NSView *hit = NPFindViewClass(s, cls);
+		if (hit) return hit;
+	}
+	return nil;
+}
+
+static BOOL NPForceEditorPaint(NSView *root) {
+	NSView *cv = NPFindViewClass(root, @"SCIContentView");
+	if (!cv) return NO;
+	[cv layoutSubtreeIfNeeded];
+	NSRect b = cv.bounds;
+	if (b.size.width < 8) b.size.width = 480;
+	if (b.size.height < 8) b.size.height = 320;
+	if (!NSEqualSizes(cv.bounds.size, b.size)) [cv setFrameSize:b.size];
+	[cv setNeedsDisplay:YES];
+	[cv display];
+	// 脏区 top 为负时，旧代码 lineDoc==-1，ll 空写 containsCaret。
+	[cv displayRect:NSMakeRect(-48, -48, NSWidth(b) + 96, NSHeight(b) + 96)];
+	return YES;
 }
 
 static BOOL NP4HeadlessNow(void) {
@@ -415,13 +459,67 @@ int main(int argc, const char *argv[]) {
 		BOOL headless = ArgPresent(argc, argv, "--headless") || (getenv("NP4_HEADLESS") != nullptr);
 		BOOL quiet = ArgPresent(argc, argv, "--quiet");
 		if (!headless) {
+			[NSAnimationContext beginGrouping];
+			[NSAnimationContext currentContext].duration = 0;
 			[win makeKeyAndOrderFront:nil];
-			[win orderFrontRegardless];
+			[win orderFront:nil];
 			[controller showWindow:nil];
+			[NSAnimationContext endGrouping];
 			if (!quiet) [app activateIgnoringOtherApps:YES];   // --quiet: 不抢焦点
 		}
 
 		InjectTestContent(argc, argv, controller);
+
+		if (ArgPresent(argc, argv, "--paintcrash")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				NSString *crashMd = @"# Head\n\n```c\nint x = 1;\n```\n\n$E=mc^2$\n\n";
+				for (int i = 0; i < 40; i++)
+					crashMd = [crashMd stringByAppendingFormat:@"wrap-this-long-markdown-line-%d and more words\n\n", i];
+				NSString *crashPath = @"/tmp/np4-paint-crash.md";
+				[crashMd writeToFile:crashPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+				[controller openURLInTab:[NSURL fileURLWithPath:crashPath]];
+				[controller.editorDocument applyLexerForExtension:@"md"];
+				ScintillaView *ev = controller.editorDocument.editor;
+				[ev message:SCI_SETWRAPMODE wParam:SC_WRAP_WORD lParam:0];
+				[ev message:SCI_SETZOOM wParam:104 lParam:0];
+				[[[controller window] contentView] layoutSubtreeIfNeeded];
+				const BOOL painted = NPForceEditorPaint([[controller window] contentView]);
+				NSString *realMd = NPRealWorldMarkdownPath();
+				BOOL paintedReal = YES;
+				if (realMd && [[NSFileManager defaultManager] fileExistsAtPath:realMd]) {
+					[controller openURLInTab:[NSURL fileURLWithPath:realMd]];
+					[ev message:SCI_SETWRAPMODE wParam:SC_WRAP_WORD lParam:0];
+					paintedReal = NPForceEditorPaint([[controller window] contentView]);
+				}
+				NSLog(@"[paintcrash] synthetic=%d contributing=%d", (int)painted, (int)paintedReal);
+				printf("PAINTCRASH synthetic=%d contributing=%d\n", (int)painted, (int)paintedReal);
+				fflush(stdout);
+				[NSApp terminate:nil];
+			});
+		}
+
+		if (ArgPresent(argc, argv, "--wincrash")) {
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				const NSInteger n0 = [MainWindowController liveControllerCount];
+				[controller fileNewWindow];
+				MainWindowController *extra = [MainWindowController liveControllers].lastObject;
+				[extra presentWindow];
+				[controller presentWindow];
+				NPForceEditorPaint([[controller window] contentView]);
+				[extra.window close];
+				[CATransaction flush];
+				NPForceEditorPaint([[controller window] contentView]);
+				const BOOL extraGone = [MainWindowController liveControllerCount] == n0;
+				NSLog(@"[wincrash] extraGone=%d live=%ld", (int)extraGone,
+					(long)[MainWindowController liveControllerCount]);
+				printf("WINCRASH extraGone=%d live=%ld\n", (int)extraGone,
+					(long)[MainWindowController liveControllerCount]);
+				fflush(stdout);
+				[NSApp terminate:nil];
+			});
+		}
 
 		// --findpanel：打开查找/替换面板（配合 --shot 验证面板文案）
 		if (ArgPresent(argc, argv, "--findpanel")) {
@@ -1396,6 +1494,7 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				MainWindowController *extra = [MainWindowController liveControllers].lastObject;
 				ok(@"new window distinct", extra != nil && extra != controller);
 				[extra.window close];
+				[CATransaction flush];
 				ok(@"closed extra gone", [MainWindowController liveControllerCount] == n0);
 				NSString *first = @"/tmp/np4-life-1.md";
 				NSString *second = @"/tmp/np4-life-2.md";
@@ -1457,7 +1556,18 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 					ok(@"md outline title", [ol[0][@"title"] isEqualToString:@"HeadA"]);
 					NSString *page = [PreviewPane pageHTMLFromMarkdown:@"# A\n\n$x$\n" dark:YES outline:YES];
 					ok(@"page dark class", [page containsString:@"class=\"dark\""]);
+					ok(@"dark code well", [page containsString:@"#111318"] && [page containsString:@"#c9d1d9"]);
+					ok(@"dark code not muddy gray", [page rangeOfString:@"#2a2a2a"].location == NSNotFound);
 					ok(@"page has outline", [page containsString:@"np4-outline"]);
+					{
+						const EDITLEXER *mdlex = [LexerRegistry lexerForExtension:@"md"];
+						BOOL sized = NO;
+						for (NSDictionary *st in [LexerRegistry styleDescriptorsForLexer:mdlex]) {
+							if ([st[@"default"] containsString:@"size:"]) sized = YES;
+						}
+						ok(@"md styles keep one font size", sized == NO);
+					}
+					ok(@"page outline can click", [page containsString:@"np4SetOutline"] && [page containsString:@"np4-ol-tab"]);
 					ok(@"page enhance hook", [page containsString:@"np4Enhance"]);
 					NSString *hide = [PreviewPane pageHTMLFromMarkdown:@"# A\n" dark:NO outline:NO];
 					ok(@"page can hide outline", [hide containsString:@"np4-hide-outline"]);
@@ -1473,6 +1583,30 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				[@"# PreviewTitle\n\nhello **md**\n" writeToFile:mp atomically:YES encoding:NSUTF8StringEncoding error:nil];
 				[controller openURLInTab:[NSURL fileURLWithPath:mp]];
 				ok(@"md kind", [PreviewPane kindForDocument:controller.editorDocument] == NPPreviewMarkdown);
+				{
+					NSString *crashMd = @"# Head\n\n```c\nint x = 1;\n```\n\n$E=mc^2$\n\n";
+					for (int i = 0; i < 40; i++)
+						crashMd = [crashMd stringByAppendingFormat:@"wrap-this-long-markdown-line-%d and more words\n\n", i];
+					NSString *crashPath = @"/tmp/np4-paint-crash.md";
+					[crashMd writeToFile:crashPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+					[controller openURLInTab:[NSURL fileURLWithPath:crashPath]];
+					[controller.editorDocument applyLexerForExtension:@"md"];
+					ScintillaView *ev = controller.editorDocument.editor;
+					[ev message:SCI_SETWRAPMODE wParam:SC_WRAP_WORD lParam:0];
+					[ev message:SCI_SETZOOM wParam:104 lParam:0];
+					[[controller window] contentView].needsLayout = YES;
+					[[[controller window] contentView] layoutSubtreeIfNeeded];
+					ok(@"editor paint md wrap", NPForceEditorPaint([[controller window] contentView]));
+					NSString *realMd = NPRealWorldMarkdownPath();
+					if (realMd && [[NSFileManager defaultManager] fileExistsAtPath:realMd]) {
+						[controller openURLInTab:[NSURL fileURLWithPath:realMd]];
+						[ev message:SCI_SETWRAPMODE wParam:SC_WRAP_WORD lParam:0];
+						ok(@"editor paint CONTRIBUTING.md", NPForceEditorPaint([[controller window] contentView]));
+					} else {
+						ok(@"editor paint CONTRIBUTING.md", YES);
+					}
+					[controller openURLInTab:[NSURL fileURLWithPath:mp]];
+				}
 				{
 					NSString *dir = @"/tmp/np4-tree";
 					[[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
@@ -1529,6 +1663,64 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 					ok(@"export png magic", gd.length > 8 && memcmp(gd.bytes, "\x89PNG", 4) == 0);
 					ok(@"export docx zip", dd.length > 8 && memcmp(dd.bytes, "PK", 2) == 0);
 				}
+				{
+					NSString *edir = @"/tmp/np4-export-html";
+					[[NSFileManager defaultManager] createDirectoryAtPath:edir withIntermediateDirectories:YES attributes:nil error:nil];
+					NSString *eh = [edir stringByAppendingPathComponent:@"out.html"];
+					[controller.editorDocument.editor setString:@"# LibTitle\n\n$x+y$\n"];
+					[controller refreshPreviewNow];
+					ok(@"export html with math", [controller exportPreviewToURL:[NSURL fileURLWithPath:eh]]);
+					NSString *hs = [NSString stringWithContentsOfFile:eh encoding:NSUTF8StringEncoding error:nil] ?: @"";
+					ok(@"export html relative katex", [hs containsString:@"katex.min.js"]
+						&& [hs rangeOfString:@"file:"].location == NSNotFound);
+					ok(@"export html refs np4-libs", [hs containsString:@"np4-libs"]
+						&& [hs rangeOfString:@"file:"].location == NSNotFound);
+					ok(@"export copied katex js", [[NSFileManager defaultManager]
+						fileExistsAtPath:[edir stringByAppendingPathComponent:@"np4-libs/katex.min.js"]]);
+					ok(@"export copied mermaid", [[NSFileManager defaultManager]
+						fileExistsAtPath:[edir stringByAppendingPathComponent:@"np4-libs/mermaid.min.js"]]);
+					ok(@"export copied katex css", [[NSFileManager defaultManager]
+						fileExistsAtPath:[edir stringByAppendingPathComponent:@"np4-libs/katex.min.css"]]);
+					ok(@"export copied katex fonts", [[NSFileManager defaultManager]
+						fileExistsAtPath:[edir stringByAppendingPathComponent:@"np4-libs/fonts/KaTeX_Main-Regular.woff2"]]);
+					NSString *userFonts = [edir stringByAppendingPathComponent:@"fonts"];
+					[[NSFileManager defaultManager] createDirectoryAtPath:userFonts withIntermediateDirectories:YES attributes:nil error:nil];
+					NSString *userKeep = [userFonts stringByAppendingPathComponent:@"keep.txt"];
+					[@"user" writeToFile:userKeep atomically:YES encoding:NSUTF8StringEncoding error:nil];
+					ok(@"export ok before re-export", [controller exportPreviewToURL:[NSURL fileURLWithPath:eh]]);
+					ok(@"export keeps user fonts dir", [[NSFileManager defaultManager] fileExistsAtPath:userKeep]);
+					NSString *tbl = @"| Name | Qty |\n| --- | --- |\n| bolt | 3 |\n";
+					NSData *docx = [PreviewExport dataFromMarkdown:tbl html:nil format:NPExportDOCX dark:NO];
+					NSString *dump = [[NSString alloc] initWithData:docx encoding:NSISOLatin1StringEncoding] ?: @"";
+					ok(@"export docx has table head", [dump containsString:@"Name | Qty"]);
+					ok(@"export docx has table row", [dump containsString:@"bolt | 3"]);
+					NSData *pdf = [PreviewExport dataFromMarkdown:tbl html:nil format:NPExportPDF dark:NO];
+					ok(@"export pdf keeps table", pdf.length > 400);
+					ok(@"in-place js ensures libs",
+						[[PreviewPane inPlaceRefreshJavaScriptWithBody:@"<p>x</p>"] containsString:@"np4EnsureLibs"]);
+				}
+				{
+					NSString *hdir = @"/tmp/np4-html-base";
+					[[NSFileManager defaultManager] createDirectoryAtPath:hdir withIntermediateDirectories:YES attributes:nil error:nil];
+					NSString *hp = [hdir stringByAppendingPathComponent:@"page.html"];
+					[@"<p><img src=\"rel.png\" alt=\"x\"></p>\n" writeToFile:hp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+					[controller openURLInTab:[NSURL fileURLWithPath:hp]];
+					if (![controller previewOn]) [controller viewPreview];
+					[controller refreshPreviewNow];
+					NSURL *base = [controller previewLastBaseURL];
+					NSURL *lib = [PreviewPane previewLibraryURL];
+					ok(@"html preview base is file dir",
+						[[base.path stringByStandardizingPath] isEqualToString:[hdir stringByStandardizingPath]]);
+					ok(@"html preview base not lib", lib.path.length == 0
+						|| ![[base.path stringByStandardizingPath] isEqualToString:[lib.path stringByStandardizingPath]]);
+					[controller openURLInTab:[NSURL fileURLWithPath:mp]];
+					if (![controller previewOn]) [controller viewPreview];
+					[controller refreshPreviewNow];
+					NSURL *mdBase = [controller previewLastBaseURL];
+					ok(@"md preview base is lib", lib.path.length == 0
+						|| [[mdBase.path stringByStandardizingPath] isEqualToString:[lib.path stringByStandardizingPath]]);
+					ok(@"preview page has ensure libs", [[controller previewLastPageHTML] containsString:@"np4EnsureLibs"]);
+				}
 				[controller.editorDocument.editor setString:@"# AfterEdit\n\nkeep-place\n\nend\n"];
 				[controller refreshPreviewNow];
 				ok(@"preview follows edit", [[controller previewHTML] containsString:@"AfterEdit"]);
@@ -1537,13 +1729,29 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				[controller refreshPreviewNow];
 				ok(@"preview same text skipped", [controller previewLastRefreshInPlace]);
 				ok(@"preview skip does not scroll", [controller previewLastRefreshDidScroll] == NO);
-				ok(@"md preview uses line map", [controller previewUsesLineMap]);
+				ok(@"md preview uses percent", [controller previewUsesLineMap] == NO);
 				ok(@"md scroll linked", [controller previewScrollLinked]);
 				ok(@"md page src-line", [[controller previewLastPageHTML] containsString:@"data-src-line"]);
+				ok(@"md page percent scroll", [[controller previewLastPageHTML] containsString:@"np4ScrollToFrac"]);
+				ok(@"md outline stays put", [[controller previewLastPageHTML] containsString:@":has(.np4-md){overflow:hidden"]);
+				ok(@"md outline is narrow", [[controller previewLastPageHTML] containsString:@"flex:0 0 112px"]);
+				ok(@"md outline tab clears heading", [[controller previewLastPageHTML] containsString:@"padding:34px 16px 12px"]);
+				ok(@"outline item no focus ring", [[controller previewLastPageHTML] containsString:
+					@"a.np4-ol-item:focus,a.np4-ol-item:focus-visible{outline:none}"]);
+				NSButton *ob = [controller outlineStatusButton];
+				ok(@"outline status button", ob != nil);
 				[controller syncPreviewToEditor];
 				ok(@"md sync records line", [controller previewLastSyncLine] >= 0);
-				[controller applyPreviewScrollLine:2 fraction:0];
-				ok(@"md preview drives editor", [controller lastAppliedEditorLineFromPreview] == 1);
+				ok(@"md sync records frac", [controller previewLastSyncFrac] >= 0);
+				NSMutableString *longMd = [NSMutableString stringWithString:@"# Top\n\n"];
+				for (NSInteger i = 0; i < 80; i++)
+					[longMd appendFormat:@"line-%ld\n\n", (long)i];
+				[controller.editorDocument.editor setString:longMd];
+				[controller refreshPreviewNow];
+				[controller applyPreviewScrollLine:99 fraction:0];
+				ok(@"md scroll ignores line map", [controller lastAppliedEditorLineFromPreview] == 0);
+				[controller applyPreviewScrollLine:1 fraction:1];
+				ok(@"md preview drives editor by percent", [controller lastAppliedEditorLineFromPreview] >= 0);
 				NSString *hp = @"/tmp/np4-preview.html";
 				[@"<h2>HtmlTitle</h2><p>zz</p>\n" writeToFile:hp atomically:YES encoding:NSUTF8StringEncoding error:nil];
 				[controller openURLInTab:[NSURL fileURLWithPath:hp]];
@@ -1557,6 +1765,8 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				[controller syncPreviewToEditor];
 				ok(@"html preview does not drive editor", [controller lastAppliedEditorLineFromPreview] == htmlAppliedBefore);
 				ok(@"html editor line unchanged", [controller editorFirstVisibleLine] == htmlVisBefore);
+				ok(@"html page no outline tab", [[PreviewPane wrapPreviewBody:@"<p>x</p>" dark:NO
+					kind:NPPreviewHTML editable:NO outline:NO] rangeOfString:@"id=\"np4-ol-tab\""].location == NSNotFound);
 				NSString *tp = @"/tmp/np4-preview.txt";
 				[@"# TxtTitle\n\nplain **txt**\n" writeToFile:tp atomically:YES encoding:NSUTF8StringEncoding error:nil];
 				[controller openURLInTab:[NSURL fileURLWithPath:tp]];
@@ -1701,6 +1911,7 @@ while ([controller tabCount] > 1) [controller fileCloseTab];
 				[[NSUserDefaults standardUserDefaults] setInteger:12 forKey:@"NP4WrapColumn"];
 				[controller performSelector:@selector(editColumnWrap)];
 				ok(@"column wrap", [[[ev string] componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]] count] > 1);
+				[[NSUserDefaults standardUserDefaults] setInteger:80 forKey:@"NP4WrapColumn"];
 				[ev setString:@"para one\nstill one\n\npara two"];
 				[ev message:SCI_SELECTALL wParam:0 lParam:0];
 				[controller performSelector:@selector(editJoinParagraphs)];

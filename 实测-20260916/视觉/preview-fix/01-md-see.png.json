@@ -1,0 +1,123 @@
+{
+  "receipt" : "receipt=58731:78029:140,190,1011x652",
+  "elements" : [
+    {
+      "role" : "AXButton",
+      "cy" : 46,
+      "ref" : "e1",
+      "title" : "文件",
+      "cx" : 32,
+      "enabled" : true
+    },
+    {
+      "enabled" : true,
+      "role" : "AXButton",
+      "title" : "编辑",
+      "cx" : 88,
+      "cy" : 46,
+      "ref" : "e2"
+    },
+    {
+      "cx" : 144,
+      "ref" : "e3",
+      "title" : "搜索",
+      "enabled" : true,
+      "role" : "AXButton",
+      "cy" : 46
+    },
+    {
+      "cy" : 46,
+      "enabled" : true,
+      "ref" : "e4",
+      "cx" : 200,
+      "title" : "视图",
+      "role" : "AXButton"
+    },
+    {
+      "title" : "方案",
+      "cx" : 256,
+      "cy" : 46,
+      "enabled" : true,
+      "ref" : "e5",
+      "role" : "AXButton"
+    },
+    {
+      "role" : "AXButton",
+      "title" : "设置",
+      "cx" : 312,
+      "cy" : 46,
+      "enabled" : true,
+      "ref" : "e6"
+    },
+    {
+      "enabled" : true,
+      "cx" : 368,
+      "ref" : "e7",
+      "title" : "工具",
+      "role" : "AXButton",
+      "cy" : 46
+    },
+    {
+      "ref" : "e8",
+      "cx" : 424,
+      "title" : "帮助",
+      "cy" : 46,
+      "role" : "AXButton",
+      "enabled" : true
+    },
+    {
+      "role" : "AXTextArea",
+      "cx" : 143.5,
+      "cy" : 373,
+      "title" : "Scintilla",
+      "enabled" : true,
+      "ref" : "e9"
+    },
+    {
+      "cx" : 26,
+      "title" : "预览",
+      "enabled" : true,
+      "cy" : 641,
+      "role" : "AXButton",
+      "ref" : "e10"
+    },
+    {
+      "role" : "AXButton",
+      "cy" : 641,
+      "enabled" : true,
+      "title" : "文件",
+      "ref" : "e11",
+      "cx" : 74
+    },
+    {
+      "cx" : 16,
+      "cy" : 16,
+      "ref" : "e12",
+      "enabled" : true,
+      "role" : "AXButton",
+      "title" : ""
+    },
+    {
+      "cy" : 16,
+      "enabled" : true,
+      "role" : "AXButton",
+      "cx" : 62,
+      "ref" : "e13",
+      "title" : ""
+    },
+    {
+      "cy" : 16,
+      "enabled" : true,
+      "role" : "AXButton",
+      "ref" : "e14",
+      "cx" : 39,
+      "title" : ""
+    }
+  ],
+  "window" : {
+    "id" : 58731,
+    "pid" : 78029,
+    "h" : 652,
+    "w" : 1011
+  }
+}

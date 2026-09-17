@@ -55,9 +55,11 @@ static NSString *WStr2(const wchar_t *ws) {
 @property (nonatomic, strong) NSMutableArray<NSTextField *> *cells;
 @property (nonatomic, strong) NPStatusPreviewButton *previewBtn;
 @property (nonatomic, strong) NPStatusPreviewButton *treeBtn;
+@property (nonatomic, strong) NPStatusPreviewButton *outlineBtn;
 @property (nonatomic, weak) id previewTarget;
 @property (nonatomic) BOOL previewOn;
 @property (nonatomic) BOOL fileTreeOn;
+@property (nonatomic) BOOL outlineOn;
 @end
 
 @implementation StatusBarView
@@ -108,10 +110,13 @@ static NSString *WStr2(const wchar_t *ws) {
 - (void)rebuildPreviewButton {
 	if (_previewBtn) [_previewBtn removeFromSuperview];
 	if (_treeBtn) [_treeBtn removeFromSuperview];
+	if (_outlineBtn) [_outlineBtn removeFromSuperview];
 	_previewBtn = [self makeToggle:NPL(@"Preview") action:@selector(viewPreview) on:_previewOn];
 	[_previewBtn.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:4].active = YES;
 	_treeBtn = [self makeToggle:NPL(@"Files") action:@selector(viewFileTree) on:_fileTreeOn];
 	[_treeBtn.leadingAnchor constraintEqualToAnchor:_previewBtn.trailingAnchor constant:4].active = YES;
+	_outlineBtn = [self makeToggle:NPL(@"Outline") action:@selector(viewOutline) on:_outlineOn];
+	[_outlineBtn.leadingAnchor constraintEqualToAnchor:_treeBtn.trailingAnchor constant:4].active = YES;
 }
 
 - (void)buildCells {
@@ -120,7 +125,7 @@ static NSString *WStr2(const wchar_t *ws) {
 	[self rebuildPreviewButton];
 
 	NSArray<NSNumber *> *widths = [self widthsForLanguage];
-	NSView *prev = _treeBtn ?: _previewBtn;
+	NSView *prev = _outlineBtn ?: _treeBtn ?: _previewBtn;
 	NSView *sep0 = [[NSView alloc] initWithFrame:NSZeroRect];
 	sep0.wantsLayer = YES;
 	sep0.layer.backgroundColor = [NSColor separatorColor].CGColor;
@@ -176,6 +181,8 @@ static NSString *WStr2(const wchar_t *ws) {
 	_previewBtn.action = @selector(viewPreview);
 	_treeBtn.target = target;
 	_treeBtn.action = @selector(viewFileTree);
+	_outlineBtn.target = target;
+	_outlineBtn.action = @selector(viewOutline);
 }
 
 - (void)setPreviewActive:(BOOL)on {
@@ -190,8 +197,15 @@ static NSString *WStr2(const wchar_t *ws) {
 	_treeBtn.needsDisplay = YES;
 }
 
+- (void)setOutlineActive:(BOOL)on {
+	_outlineOn = on;
+	_outlineBtn.previewOn = on;
+	_outlineBtn.needsDisplay = YES;
+}
+
 - (NSButton *)previewButton { return _previewBtn; }
 - (NSButton *)fileTreeButton { return _treeBtn; }
+- (NSButton *)outlineButton { return _outlineBtn; }
 - (NSString *)cellTextAtIndex:(NSUInteger)i {
 	return [self cellAt:i].stringValue ?: @"";
 }

@@ -10,8 +10,10 @@
 - (void)setPreviewTarget:(id)target;
 - (void)setPreviewActive:(BOOL)on;
 - (void)setFileTreeActive:(BOOL)on;
+- (void)setOutlineActive:(BOOL)on;
 - (NSButton *)previewButton;
 - (NSButton *)fileTreeButton;
+- (NSButton *)outlineButton;
 - (NSString *)cellTextAtIndex:(NSUInteger)i;
 
 @property (nonatomic, readonly) NSTextField *posField;      // 行,列 (字符,选择)

@@ -2664,6 +2664,12 @@ void EditView::DrawLine(Surface *surface, const EditModel &model, const ViewStyl
 
 void EditView::PaintText(Surface *surfaceWindow, const EditModel &model, const ViewStyle &vsDraw,
 	PRectangle rcArea, PRectangle rcClient) {
+	// 行高未就绪时除零，脏区 top 为负时 DocFromDisplay 会得到 -1，
+	// 与 lineDocPrevious 初值撞车，ll 为空仍写 containsCaret（far=0x2d）。
+	if (vsDraw.lineHeight <= 0) {
+		return;
+	}
+
 	// Allow text at start of line to overlap 1 pixel into the margin as this displays
 	// serifs and italic stems for aliased text.
 	const int leftTextOverlap = ((model.xOffset == 0) && (vsDraw.leftMarginWidth > 0)) ? 1 : 0;
@@ -2730,6 +2736,14 @@ void EditView::PaintText(Surface *surfaceWindow, const EditModel &model, const V
 			while (lineVisible < linesDisplayed && yposScreen < bottom) {
 
 				const Sci::Line lineDoc = model.pcs->DocFromDisplay(lineVisible);
+				if (lineDoc < 0) {
+					if (!bufferedDraw) {
+						ypos += vsDraw.lineHeight;
+					}
+					yposScreen += vsDraw.lineHeight;
+					lineVisible++;
+					continue;
+				}
 				// Only visible lines should be handled by the code within the loop
 				PLATFORM_ASSERT(model.pcs->GetVisible(lineDoc));
 				const Sci::Line lineStartSet = model.pcs->DisplayFromDoc(lineDoc);
@@ -2743,15 +2757,25 @@ void EditView::PaintText(Surface *surfaceWindow, const EditModel &model, const V
 				if (lineDoc != lineDocPrevious) {
 					lineDocPrevious = lineDoc;
 					ll = RetrieveLineLayout(lineDoc, model);
-					LayoutLine(model, surface, vsDraw, ll.get(), model.wrapWidth, LayoutLineOption::PaintText);
-					if (model.BidirectionalEnabled()) {
-						// Fill the line bidi data
-						UpdateBidiData(model, vsDraw, ll.get());
+					if (ll) {
+						LayoutLine(model, surface, vsDraw, ll.get(), model.wrapWidth, LayoutLineOption::PaintText);
+						if (model.BidirectionalEnabled()) {
+							// Fill the line bidi data
+							UpdateBidiData(model, vsDraw, ll.get());
+						}
 					}
 				}
 #if defined(TIME_PAINTING)
 				durLayout += ep.Reset();
 #endif
+				if (!ll) {
+					if (!bufferedDraw) {
+						ypos += vsDraw.lineHeight;
+					}
+					yposScreen += vsDraw.lineHeight;
+					lineVisible++;
+					continue;
+				}
 				{
 					ll->containsCaret = vsDraw.selection.visible && (lineDoc == lineCaret)
 						&& (ll->lines == 1 || !vsDraw.caretLine.subLine || ll->InLine(caretOffset, subLine));

@@ -237,6 +237,9 @@ Sci::Line ContractionState<LINE>::DisplayLastFromDoc(Sci::Line lineDoc) const no
 template <typename LINE>
 Sci::Line ContractionState<LINE>::DocFromDisplay(Sci::Line lineDisplay) const noexcept {
 	if (OneToOne()) {
+		if (lineDisplay < 0) {
+			return 0;
+		}
 		return lineDisplay;
 	} else {
 		if (lineDisplay < 0) {

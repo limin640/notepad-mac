@@ -10,6 +10,7 @@ typedef NS_ENUM(NSInteger, NPBlockKind) {
 	NPBlockPre,
 	NPBlockQuote,
 	NPBlockMath,
+	NPBlockTable,
 };
 
 @interface NPExportBlock : NSObject
@@ -51,11 +52,34 @@ static NSString *NPXMLEscape(NSString *s) {
 	return o;
 }
 
+static NSString *NPTablePlain(NSString *inner) {
+	if (inner.length == 0) return @"";
+	NSRegularExpression *tr = [NSRegularExpression regularExpressionWithPattern:
+		@"<tr\\b[^>]*>([\\s\\S]*?)</tr>" options:NSRegularExpressionCaseInsensitive error:nil];
+	NSRegularExpression *cell = [NSRegularExpression regularExpressionWithPattern:
+		@"<t[hd]\\b[^>]*>([\\s\\S]*?)</t[hd]>" options:NSRegularExpressionCaseInsensitive error:nil];
+	if (!tr || !cell) return NPStripTags(inner);
+	NSMutableArray *rows = [NSMutableArray array];
+	NSArray *tms = [tr matchesInString:inner options:0 range:NSMakeRange(0, inner.length)];
+	for (NSTextCheckingResult *m in tms) {
+		if (m.numberOfRanges < 2) continue;
+		NSString *rowHTML = [inner substringWithRange:[m rangeAtIndex:1]];
+		NSMutableArray *cols = [NSMutableArray array];
+		NSArray *cms = [cell matchesInString:rowHTML options:0 range:NSMakeRange(0, rowHTML.length)];
+		for (NSTextCheckingResult *c in cms) {
+			if (c.numberOfRanges < 2) continue;
+			[cols addObject:NPStripTags([rowHTML substringWithRange:[c rangeAtIndex:1]])];
+		}
+		if (cols.count) [rows addObject:[cols componentsJoinedByString:@" | "]];
+	}
+	return [rows componentsJoinedByString:@"\n"];
+}
+
 static NSArray<NPExportBlock *> *NPBlocksFromHTML(NSString *html) {
 	NSMutableArray *out = [NSMutableArray array];
 	if (html.length == 0) return out;
 	NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:
-		@"<(h([1-6])|p|li|pre|blockquote|div)\\b([^>]*)>([\\s\\S]*?)</\\1>"
+		@"<(h([1-6])|p|li|pre|blockquote|div|table)\\b([^>]*)>([\\s\\S]*?)</\\1>"
 		options:NSRegularExpressionCaseInsensitive error:nil];
 	if (!re) return out;
 	NSArray *ms = [re matchesInString:html options:0 range:NSMakeRange(0, html.length)];
@@ -76,6 +100,12 @@ static NSArray<NPExportBlock *> *NPBlocksFromHTML(NSString *html) {
 			b.kind = NPBlockQuote;
 		} else if ([tag isEqualToString:@"div"] && [attrs containsString:@"np4-math"]) {
 			b.kind = NPBlockMath;
+		} else if ([tag isEqualToString:@"table"]) {
+			b.kind = NPBlockTable;
+			b.text = NPTablePlain(inner);
+			if (b.text.length == 0) continue;
+			[out addObject:b];
+			continue;
 		} else if ([tag isEqualToString:@"p"]) {
 			b.kind = NPBlockP;
 		} else {
@@ -184,11 +214,11 @@ static NSAttributedString *NPAttrFromBlocks(NSArray<NPExportBlock *> *blocks, BO
 		if (b.kind == NPBlockH) {
 			size = (CGFloat)MAX(14, 26 - b.level * 2);
 			bold = YES;
-		} else if (b.kind == NPBlockPre || b.kind == NPBlockMath) {
+		} else if (b.kind == NPBlockPre || b.kind == NPBlockMath || b.kind == NPBlockTable) {
 			size = 11;
 		}
 		NSFont *font = bold ? [NSFont boldSystemFontOfSize:size]
-			: ((b.kind == NPBlockPre || b.kind == NPBlockMath)
+			: ((b.kind == NPBlockPre || b.kind == NPBlockMath || b.kind == NPBlockTable)
 				? [NSFont fontWithName:@"Menlo" size:size] ?: [NSFont monospacedSystemFontOfSize:size weight:NSFontWeightRegular]
 				: [NSFont systemFontOfSize:size]);
 		NSString *prefix = (b.kind == NPBlockLI) ? @"• " : (b.kind == NPBlockQuote ? @"| " : @"");
@@ -269,7 +299,7 @@ static NSData *NPDOCXFromBlocks(NSArray<NPExportBlock *> *blocks) {
 		NSString *style = @"Normal";
 		if (b.kind == NPBlockH && b.level >= 1 && b.level <= 6)
 			style = [NSString stringWithFormat:@"Heading%ld", (long)b.level];
-		else if (b.kind == NPBlockPre || b.kind == NPBlockMath)
+		else if (b.kind == NPBlockPre || b.kind == NPBlockMath || b.kind == NPBlockTable)
 			style = @"Code";
 		else if (b.kind == NPBlockQuote)
 			style = @"Quote";
@@ -358,13 +388,51 @@ static NSData *NPDOCXFromBlocks(NSArray<NPExportBlock *> *blocks) {
 	return NPDOCXFromBlocks(blocks);
 }
 
+// 库一律放进专属子目录 np4-libs/。若直接散在导出目录，重导出时
+// removeItemAtURL 会把用户自己的 fonts/ 或 katex.min.js 删掉。
++ (NSURL *)previewLibsDestInDirectory:(NSURL *)dir {
+	return [dir URLByAppendingPathComponent:@"np4-libs"];
+}
+
++ (BOOL)copyPreviewLibrariesBesideHTMLURL:(NSURL *)url error:(NSError **)err {
+	NSURL *src = [PreviewPane previewLibraryURL];
+	NSURL *dst = [self previewLibsDestInDirectory:url.URLByDeletingLastPathComponent];
+	if (src == nil || dst.path.length == 0) {
+		if (err) *err = [NSError errorWithDomain:@"PreviewExport" code:2
+			userInfo:@{NSLocalizedDescriptionKey: @"preview libraries missing"}];
+		return NO;
+	}
+	NSFileManager *fm = [NSFileManager defaultManager];
+	if (![fm createDirectoryAtPath:dst.path withIntermediateDirectories:YES attributes:nil error:err]) return NO;
+	for (NSString *name in @[@"katex.min.js", @"katex.min.css", @"mermaid.min.js", @"fonts"]) {
+		NSURL *from = [src URLByAppendingPathComponent:name];
+		NSURL *to = [dst URLByAppendingPathComponent:name];
+		if (![fm fileExistsAtPath:from.path]) {
+			if (err) *err = [NSError errorWithDomain:@"PreviewExport" code:2
+				userInfo:@{NSLocalizedDescriptionKey: name}];
+			return NO;
+		}
+		[fm removeItemAtURL:to error:nil];
+		if (![fm copyItemAtURL:from toURL:to error:err]) return NO;
+	}
+	return YES;
+}
+
 + (BOOL)writeData:(NSData *)data toURL:(NSURL *)url error:(NSError **)err {
 	if (data == nil || url == nil) {
 		if (err) *err = [NSError errorWithDomain:@"PreviewExport" code:1
 			userInfo:@{NSLocalizedDescriptionKey: @"empty export"}];
 		return NO;
 	}
-	return [data writeToURL:url options:NSDataWritingAtomic error:err];
+	if (![data writeToURL:url options:NSDataWritingAtomic error:err]) return NO;
+	NSString *ext = url.pathExtension.lowercaseString ?: @"";
+	if ([ext isEqualToString:@"html"] || [ext isEqualToString:@"htm"]) {
+		// HTML 本体已写成功；库只是公式/图的增强，拷不动就降级，别让导出整体报失败。
+		NSError *libErr = nil;
+		if ([self copyPreviewLibrariesBesideHTMLURL:url error:&libErr] == NO)
+			NSLog(@"[export] preview libs not copied: %@", libErr.localizedDescription);
+	}
+	return YES;
 }
 
 @end

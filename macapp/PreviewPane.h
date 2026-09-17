@@ -14,6 +14,7 @@ typedef NS_ENUM(NSInteger, NPPreviewKind) {
 @interface PreviewPane : NSView
 @property (nonatomic, copy) void (^onHTMLEdited)(NSString *html);
 @property (nonatomic, copy) void (^onPreviewScroll)(NSInteger srcLine, CGFloat frac);
+@property (nonatomic, copy) void (^onOutlineToggle)(BOOL on);
 + (NPPreviewKind)kindForDocument:(EditorDocument *)doc;
 + (NSString *)htmlFromMarkdown:(NSString *)markdown;
 + (NSString *)htmlForDocument:(EditorDocument *)doc;
@@ -22,6 +23,8 @@ typedef NS_ENUM(NSInteger, NPPreviewKind) {
 	editable:(BOOL)editable outline:(BOOL)outline;
 + (NSArray<NSDictionary *> *)outlineFromMarkdown:(NSString *)markdown;
 + (NSURL *)previewLibraryURL;
++ (NSURL *)previewBaseURLForDocument:(EditorDocument *)doc;
++ (NSString *)inPlaceRefreshJavaScriptWithBody:(NSString *)body;
 + (BOOL)hasLocalPreviewLibraries;
 - (void)refreshDocument:(EditorDocument *)doc dark:(BOOL)dark;
 - (void)setOutlineVisible:(BOOL)on;
@@ -29,11 +32,13 @@ typedef NS_ENUM(NSInteger, NPPreviewKind) {
 - (void)foldPreviewOutline:(BOOL)fold;
 - (NSString *)lastHTML;
 - (NSString *)lastPageHTML;
+- (NSURL *)lastPreviewBaseURL;
 - (BOOL)lastRefreshInPlace;
 - (BOOL)lastRefreshDidScroll;
 - (BOOL)previewUsesLineMap;
 - (NSInteger)lastSyncLine;
 - (CGFloat)lastSyncFrac;
 - (void)scrollPreviewToSourceLine:(NSInteger)line lineCount:(NSInteger)lineCount;
+- (void)scrollPreviewToFraction:(CGFloat)frac;
 - (void)shutdown;
 @end

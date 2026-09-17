@@ -13,4 +13,5 @@ typedef NS_ENUM(NSInteger, NPExportFormat) {
 + (NSData *)dataFromMarkdown:(NSString *)markdown html:(NSString *)html
 	format:(NPExportFormat)fmt dark:(BOOL)dark;
 + (BOOL)writeData:(NSData *)data toURL:(NSURL *)url error:(NSError **)err;
++ (BOOL)copyPreviewLibrariesBesideHTMLURL:(NSURL *)url error:(NSError **)err;
 @end
