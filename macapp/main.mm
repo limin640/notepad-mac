@@ -576,6 +576,75 @@ int main(int argc, const char *argv[]) {
 				[NSApp terminate:nil];
 			});
 		}
+		// --menushots <dir>：逐个展开全部顶级菜单与二级 flyout 并截图，供人工核对渲染
+		if (ArgPresent(argc, argv, "--menushots")) {
+			NSString *dir = [NSString stringWithUTF8String:ArgValue(argc, argv, "--menushots")];
+			[[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+					typedef CGImageRef (*Fn)(CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption);
+					static Fn fn = (Fn)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
+					CGWindowID wid = (CGWindowID)[[controller window] windowNumber];
+					void (^shot)(NSString *) = ^(NSString *name) {
+						NSView *rootView = [[controller window] contentView];
+						[rootView layoutSubtreeIfNeeded];
+						CGImageRef img = fn ? fn(CGRectNull, kCGWindowListOptionIncludingWindow, wid,
+							kCGWindowImageBoundsIgnoreFraming) : NULL;
+						NSData *png = nil;
+						if (img) {
+							NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:img];
+							CGImageRelease(img);
+							png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+						} else {
+							// 无头模式无窗口合成，退回 cacheDisplay（overlay 在 contentView 内）
+							NSBitmapImageRep *rep = [rootView bitmapImageRepForCachingDisplayInRect:rootView.bounds];
+							[rootView cacheDisplayInRect:rootView.bounds toBitmapImageRep:rep];
+							png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+						}
+						[png writeToFile:[dir stringByAppendingPathComponent:name] atomically:YES];
+					};
+					NSArray *topNames = @[@"01-file", @"02-edit", @"03-search", @"04-view",
+						@"05-scheme", @"06-settings", @"07-tools", @"08-help"];
+					for (NSInteger i = 0; i < (NSInteger)topNames.count; i++) {
+						[controller closeInWindowMenu];
+						[controller openInWindowMenuAtIndex:i];
+						shot([NSString stringWithFormat:@"top-%@.png", topNames[i]]);
+					}
+					[controller closeInWindowMenu];
+					NSArray<NSArray<NSString *> *> *flyouts = @[
+						@[@"文件", @"文件模式"], @[@"文件", @"重新载入"], @[@"文件", @"编码"],
+						@[@"文件", @"换行符"], @[@"文件", @"导出"],
+						@[@"编辑", @"复制到剪贴板"], @[@"编辑", @"选中文本"], @[@"编辑", @"包围选中文本"],
+						@[@"编辑", @"行"], @[@"编辑", @"转换"], @[@"编辑", @"插入"], @[@"编辑", @"特殊"],
+						@[@"搜索", @"书签"], @[@"搜索", @"转到"],
+						@[@"视图", @"折叠"], @[@"视图", @"缩放"],
+						@[@"方案", @"界面主题"],
+						@[@"设置", @"语言"], @[@"设置", @"外观"],
+						@[@"工具", @"对选区操作"], @[@"工具", @"Base64"], @[@"工具", @"文字转换"], @[@"工具", @"网页工具"],
+					];
+					NSInteger flyOK = 0;
+					NSMutableString *failed = [NSMutableString string];
+					for (NSArray *p in flyouts) {
+						[controller closeInWindowMenu];
+						if ([controller clickInWindowMenuPath:p]) {
+							NSString *safe = [[[p componentsJoinedByString:@"-"]
+								stringByReplacingOccurrencesOfString:@"..." withString:@""]
+								stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+							shot([NSString stringWithFormat:@"fly-%@.png", safe]);
+							flyOK++;
+						} else {
+							[failed appendFormat:@"%@ ", [p componentsJoinedByString:@"/"]];
+						}
+					}
+					[controller closeInWindowMenu];
+					NSLog(@"[menushots] top=8 fly_ok=%ld fail=%@", (long)flyOK,
+						failed.length ? failed : @"none");
+					printf("MENUSHOTS top=8 fly_ok=%ld failed=%s\n", (long)flyOK,
+						failed.UTF8String ? failed.UTF8String : "none");
+					fflush(stdout);
+					[NSApp terminate:nil];
+				});
+		}
 		// --functest：逐项调用新实现的菜单动作，打印结果
 		if (ArgPresent(argc, argv, "--functest")) {
 			EditorDocument *d = controller.editorDocument;
