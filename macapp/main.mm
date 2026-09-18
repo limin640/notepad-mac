@@ -645,6 +645,88 @@ int main(int argc, const char *argv[]) {
 					[NSApp terminate:nil];
 				});
 		}
+		// --caretx：诊断光标 x 与文本渲染是否一致；SETSEL 到文末后连拍 3 帧抓闪烁
+		if (ArgPresent(argc, argv, "--caretx")) {
+			NSString *shotPath = @"/tmp/np4-caretx.png";
+			if (const char *p = ArgValue(argc, argv, "--shot")) shotPath = [NSString stringWithUTF8String:p];
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+				ScintillaView *ev = controller.editorDocument.editor;
+				// 模拟 IME 组合串：长行 + 自动换行 + caret 在文末
+				if (const char *c = ArgValue(argc, argv, "--code")) {
+					NSString *s = [NSString stringWithUTF8String:c];
+					[ev setString:s];
+				}
+				[ev message:SCI_SETWRAPMODE wParam:SC_WRAP_WORD lParam:0];
+				// --typechars <n>：合成键盘逐字输入数字 1，走真实 IME 组合路径
+				if (const char *tc = ArgValue(argc, argv, "--typechars")) {
+					[[controller window] makeKeyAndOrderFront:nil];
+					[controller.window makeFirstResponder:ev.content];
+					const int n = atoi(tc);
+					for (int k = 0; k < n; k++) {
+						CGEventRef kd = CGEventCreateKeyboardEvent(NULL, 82, true);   // keypad 1
+						CGEventRef ku = CGEventCreateKeyboardEvent(NULL, 82, false);
+						CGEventPost(kCGHIDEventTap, kd);
+						CGEventPost(kCGHIDEventTap, ku);
+						CFRelease(kd); CFRelease(ku);
+						[NSThread sleepForTimeInterval:0.02];
+					}
+				}
+				const sptr_t len = [ev message:SCI_GETLENGTH];
+				const long px = (long)[ev message:SCI_POINTXFROMPOSITION wParam:0 lParam:len];
+				long widths[6] = {0};
+				const char *samples = "hx/-g";
+				for (int i = 0; i < 5; i++)
+					widths[i] = (long)[ev message:SCI_TEXTWIDTH wParam:STYLE_DEFAULT lParam:(sptr_t)(samples + i)];
+				const long marginW = (long)[ev message:SCI_GETMARGINWIDTHN wParam:1]
+					+ (long)[ev message:SCI_GETMARGINWIDTHN wParam:0]
+					+ (long)[ev message:SCI_GETMARGINWIDTHN wParam:2];
+				// caret 所在显示行的宽度与文本起止
+				const sptr_t caretDoc = [ev message:SCI_GETCURRENTPOS];
+				const sptr_t caretLine = [ev message:SCI_LINEFROMPOSITION wParam:caretDoc];
+				const long lineStartX = (long)[ev message:SCI_POINTXFROMPOSITION wParam:caretLine lParam:[ev message:SCI_POSITIONFROMLINE wParam:caretLine]];
+				const long caretRelX = px - (long)[ev message:SCI_POINTXFROMPOSITION wParam:caretLine lParam:[ev message:SCI_POSITIONFROMLINE wParam:caretLine]];
+				NSMutableString *curve = [NSMutableString string];
+				for (sptr_t p = 0; p <= len; p += 10) {
+					[curve appendFormat:@"%ld:%ld ", (long)p,
+						(long)[ev message:SCI_POINTXFROMPOSITION wParam:0 lParam:p]];
+				}
+				[curve appendFormat:@"END:%ld", px];
+				// 整串测量 vs 光标定位对比：抓"测量取整 vs 渲染浮点"的线性偏差
+				NSString *all = [[ev string] substringToIndex:MIN(60, (NSInteger)len)] ?: @"";
+				const long wholeW = all.length
+					? (long)[ev message:SCI_TEXTWIDTH wParam:STYLE_DEFAULT lParam:(sptr_t)all.UTF8String] : 0;
+				NSLog(@"[caretx] len=%ld zoom=%ld margins=%ld", (long)len,
+					(long)[ev message:SCI_GETZOOM], marginW);
+				NSLog(@"[caretx-curve] %@", curve);
+				NSLog(@"[caretx-whole] chars=%lu wholeWidth=%ld caretX@end=%ld avgCell=%.3f",
+					(unsigned long)all.length, wholeW, px,
+					all.length ? (double)wholeW / (double)all.length : 0.0);
+				[[controller window] makeKeyAndOrderFront:nil];
+				[controller.window makeFirstResponder:ev.content];
+				[ev message:SCI_SETSEL wParam:len lParam:len];
+				typedef CGImageRef (*Fn)(CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption);
+				static Fn fn = (Fn)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
+				CGWindowID wid = (CGWindowID)[[controller window] windowNumber];
+				// caret 亮 0.5s 灭 0.5s：三帧间隔 0.22s 必有一帧在亮相
+				for (int k = 0; k < 3; k++) {
+					CGImageRef img = fn ? fn(CGRectNull, kCGWindowListOptionIncludingWindow, wid,
+						kCGWindowImageBoundsIgnoreFraming) : NULL;
+					if (img) {
+						NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:img];
+						CGImageRelease(img);
+						NSString *p = [NSString stringWithFormat:@"%@.f%d", shotPath, k];
+						[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+							writeToFile:p atomically:YES];
+					}
+					[NSThread sleepForTimeInterval:0.22];
+				}
+				printf("CARETX len=%ld zoom=%ld caretX=%ld margins=%ld\n", (long)len,
+					(long)[ev message:SCI_GETZOOM], px, marginW);
+				fflush(stdout);
+				[NSApp terminate:nil];
+			});
+		}
 		// --functest：逐项调用新实现的菜单动作，打印结果
 		if (ArgPresent(argc, argv, "--functest")) {
 			EditorDocument *d = controller.editorDocument;

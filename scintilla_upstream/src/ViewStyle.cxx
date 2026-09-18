@@ -85,9 +85,13 @@ void FontRealised::Realise(Surface &surface, int zoomLevel, Technology technolog
 		constexpr size_t tilde = allASCIIGraphic.length() - 53;
 		static_assert(allASCIIGraphic[tilde] == '~');
 		XYPOSITION aveCharWidth = (positions.back() - positions[tilde]) * (1.0 / 52);
+#if defined(_WIN32)
+		// 仅 GDI/Bitmap 渲染按整数像素对齐；macOS CoreText 是浮点亚像素渲染，
+		// 取整会让光标定位与文本渲染每字符偏差 ~0.4px，随行长线性累积（越打越偏）。
 		if (technology == Technology::Default/*!surface.SupportsFeature(Supports::FractionalStrokeWidth)*/) {
 			aveCharWidth = std::round(aveCharWidth);
 		}
+#endif
 		measurements.aveCharWidth = aveCharWidth;
 
 		// const ElapsedPeriod period;
