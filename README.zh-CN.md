@@ -50,7 +50,7 @@ Dock 里叫 **Notepad**。仓库名是 `notepad-mac`。
 
 ## 下载
 
-[**Notepad-0.1.21.dmg**](https://github.com/limin640/notepad-mac/releases/latest) → 把 **Notepad** 拖进「应用程序」。
+[**Notepad-0.1.22.dmg**](https://github.com/limin640/notepad-mac/releases/latest) → 把 **Notepad** 拖进「应用程序」。
 
 没有公证。网上第一次打开：**按住 Control 点图标 → 打开**，或 `xattr -cr /Applications/Notepad.app`。不要双击 DMG 里面的图标，请拖走。
 

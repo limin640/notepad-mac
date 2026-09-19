@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION=$(sed -n 's/.*MACOSX_BUNDLE_SHORT_VERSION_STRING "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)
-VERSION=${VERSION:-0.1.21}
+VERSION=${VERSION:-0.1.22}
 APP_NAME="Notepad"
 BUNDLE_ID="com.limin640.notepad4mac"
 DMG_NAME="Notepad"

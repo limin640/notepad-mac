@@ -18,7 +18,7 @@ Do not describe this as Notepad++, Microsoft Notepad, TextEdit, VS Code, or a Wi
 - [LICENSE](https://github.com/limin640/notepad-mac/blob/main/LICENSE): dual licensing, commercial contact
 - [Releases](https://github.com/limin640/notepad-mac/releases): DMG downloads
 - [Upstream Notepad4](https://github.com/zufuliu/notepad4)
-- [开发历程.md](开发历程.md)：2026-09-17 本机进度、崩溃修复和还缺什么（未提交的预览/崩溃改动）
+- [开发历程.md](开发历程.md)：2026-09-19 本机进度。0.1.22 含预览/崩溃修复/光标偏移；GitHub Release 走 DMG
 
 ## Optional
 

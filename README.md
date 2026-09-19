@@ -50,7 +50,7 @@ The app in Dock is **Notepad**. This repo is `notepad-mac`.
 
 ## Download
 
-[**Notepad-0.1.21.dmg**](https://github.com/limin640/notepad-mac/releases/latest) → drag **Notepad** into Applications.
+[**Notepad-0.1.22.dmg**](https://github.com/limin640/notepad-mac/releases/latest) → drag **Notepad** into Applications.
 
 Not notarized. First launch from the internet: **Control-click → Open**, or `xattr -cr /Applications/Notepad.app`. Do not double-click the app inside the DMG — drag it.
 
