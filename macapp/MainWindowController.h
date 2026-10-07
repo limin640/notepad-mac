@@ -32,6 +32,7 @@
 - (BOOL)inWindowDropDownHasScroller;
 - (NSString *)documentPropertiesText;
 - (void)syncMenuItemStates;
+- (void)zoomWheelTestStep:(NSInteger)dir;
 - (void)viewBraceMatch;
 - (void)viewCodeFolding;
 - (void)foldToggleCurrent;

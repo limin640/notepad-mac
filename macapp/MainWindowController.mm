@@ -412,6 +412,7 @@
 	NSMutableArray<NPDropDownView *> *_dropFlyouts;
 	NSMutableArray<NSMutableArray<NSMenuItem *> *> *_dropPanelItems;
 	NSInteger _openMenuIndex;
+	id _zoomWheelMonitor;
 	id _dropClickMonitor;
 	BOOL _windowClosed;
 	sptr_t _menuSelStart;
@@ -481,6 +482,7 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 			name:@"EditorDocumentCaretChanged" object:_document];
 		[NSApp addObserver:self forKeyPath:@"effectiveAppearance"
 			options:NSKeyValueObservingOptionNew context:nullptr];
+		[self installZoomWheelMonitor];
 		[self installKeyEquivalentMonitor];
 		[self installDropClickMonitor];
 		[win makeFirstResponder:_document.editor.content];
@@ -492,6 +494,7 @@ static NSMutableArray<MainWindowController *> *NPLiveControllers(void) {
 	[MainWindowController unregisterLive:self];
 	[_previewPane shutdown];
 	if (_keyMonitor) { [NSEvent removeMonitor:_keyMonitor]; _keyMonitor = nil; }
+	if (_zoomWheelMonitor) { [NSEvent removeMonitor:_zoomWheelMonitor]; _zoomWheelMonitor = nil; }
 	if (_dropClickMonitor) { [NSEvent removeMonitor:_dropClickMonitor]; _dropClickMonitor = nil; }
 	[NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
 }
@@ -1648,6 +1651,57 @@ static BOOL NPPrefBool(NSString *key, BOOL fallback) {
 		}];
 }
 
+// Ctrl(Cmd)+滚轮缩放：仅当光标在本窗口编辑器区域内时生效；命中则缩放并返回 YES（事件吞掉）
+- (BOOL)consumeZoomWheelEvent:(NSEvent *)event {
+	const NSEventModifierFlags mods = event.modifierFlags
+		& (NSEventModifierFlagCommand | NSEventModifierFlagControl);
+	if (mods == 0) return NO;
+	// 合成事件（自测）没有 window 归属，视为本窗口
+	if (event.window != nil && event.window != self.window) return NO;
+	NSView *content = _document.editor.content;
+	NSPoint pt = [content convertPoint:event.locationInWindow fromView:nil];
+	if (!NSPointInRect(pt, content.bounds)) return NO;
+	if (event.momentumPhase != NSEventPhaseNone) return NO;
+	if (event.scrollingDeltaY < 0.02 && event.scrollingDeltaY > -0.02) return NO;
+	// 滚轮专用 ±1 步进（菜单 Ctrl+/- 仍是 ±10）：直接设值，不经过 ZoomIn/ZoomOut
+	ScintillaView *e = _document.editor;
+	const long cur = (long)[e message:SCI_GETZOOM];
+	const long next = event.scrollingDeltaY > 0 ? cur + 1 : cur - 1;
+	if (next == cur) return YES;
+	[e message:SCI_SETZOOM wParam:(sptr_t)next lParam:0];
+	// SCN_ZOOM → EditorDocumentZoomChanged 通知已驱动行号宽度与状态栏刷新
+	return YES;
+}
+
+- (void)installZoomWheelMonitor {
+	if (_zoomWheelMonitor) return;
+	__weak MainWindowController *weakSelf = self;
+	_zoomWheelMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel
+		handler:^NSEvent *(NSEvent *event) {
+			MainWindowController *self_ = weakSelf;
+			if (!self_) return event;
+			if ([self_ consumeZoomWheelEvent:event]) return nil;
+			return event;
+		}];
+}
+
+// 自测钩子：合成 Ctrl+滚轮事件（坐标取编辑器中心），走 consumeZoomWheelEvent 全链路
+- (void)zoomWheelTestStep:(NSInteger)dir {
+	NSView *content = _document.editor.content;
+	NSPoint ctr = NSMakePoint(NSMidX(content.bounds), NSMidY(content.bounds));
+	NSPoint loc = [content convertPoint:ctr toView:nil];
+	CGEventRef cg = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 1, (dir > 0 ? 3 : -3));
+	CGEventSetFlags(cg, kCGEventFlagMaskControl);
+	// eventWithCGEvent 把 location 视为 CG 全局坐标（y 自屏幕底向上），
+	// locationInWindow 回传时 y 已翻转：设 (x, 屏高-y) 才能拿回窗口相对 y
+	const CGFloat screenH = NSScreen.mainScreen.frame.size.height;
+	CGEventSetLocation(cg, NSMakePoint(loc.x, screenH - loc.y));
+	NSEvent *ev = [NSEvent eventWithCGEvent:cg];
+	CFRelease(cg);
+	[self consumeZoomWheelEvent:ev];
+}
+
+
 
 static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	const NSEventModifierFlags want = event.modifierFlags
@@ -1859,6 +1913,12 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	[self syncPreviewToEditor];
 }
 
+- (void)docZoomChanged:(NSNotification *)n {
+	(void)n;
+	[self refreshStatus];
+	// 高频滚轮下不逐格写盘，退出时 persistSettings 兜底
+}
+
 #pragma mark - File
 
 - (void)confirmIfDirtyThen:(void (^)(void))proceed {
@@ -1933,9 +1993,11 @@ static BOOL NPInvokeMatchingItem(NSMenu *menu, NSEvent *event, id editTarget) {
 	[[NSNotificationCenter defaultCenter] removeObserver:self name:@"EditorDocumentDirtyChanged" object:nil];
 	[[NSNotificationCenter defaultCenter] removeObserver:self name:@"EditorDocumentCaretChanged" object:nil];
 	[[NSNotificationCenter defaultCenter] removeObserver:self name:@"EditorDocumentScrolled" object:nil];
+	[[NSNotificationCenter defaultCenter] removeObserver:self name:@"EditorDocumentZoomChanged" object:nil];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(docDirtyChanged:) name:@"EditorDocumentDirtyChanged" object:_document];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(docCaretChanged:) name:@"EditorDocumentCaretChanged" object:_document];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(docScrolled:) name:@"EditorDocumentScrolled" object:_document];
+	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(docZoomChanged:) name:@"EditorDocumentZoomChanged" object:_document];
 	[_document applyPersistedEditorSettings];
 	[self updateWindowTitle];
 	[self refreshStatus];
@@ -3582,6 +3644,7 @@ static NSColor *NPColorFromBGR(long v) {
 	[self closeInWindowMenu];
 	[_previewPane shutdown];
 	if (_keyMonitor) { [NSEvent removeMonitor:_keyMonitor]; _keyMonitor = nil; }
+	if (_zoomWheelMonitor) { [NSEvent removeMonitor:_zoomWheelMonitor]; _zoomWheelMonitor = nil; }
 	if (_dropClickMonitor) { [NSEvent removeMonitor:_dropClickMonitor]; _dropClickMonitor = nil; }
 	[MainWindowController unregisterLive:self];
 	NSDocumentController *dc = [NSDocumentController sharedDocumentController];

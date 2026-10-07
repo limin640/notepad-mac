@@ -943,6 +943,17 @@ int main(int argc, const char *argv[]) {
 			ok(@"viewZoomOut", [e message:SCI_GETZOOM] == zoom0);
 			[controller performSelector:@selector(viewZoomReset)];
 			ok(@"viewZoomReset", [e message:SCI_GETZOOM] == 100);
+			// Ctrl+滚轮缩放：合成事件走系统分发，验证本地监控链路
+			{
+				const sptr_t z0 = [e message:SCI_GETZOOM];
+				[controller zoomWheelTestStep:+1];
+				ok(@"ctrl+wheel step +1", [e message:SCI_GETZOOM] == z0 + 1);
+				[controller zoomWheelTestStep:-1];
+				ok(@"ctrl+wheel step -1", [e message:SCI_GETZOOM] == z0);
+				[controller zoomWheelTestStep:-1];
+				ok(@"ctrl+wheel step below", [e message:SCI_GETZOOM] == z0 - 1);
+				[controller performSelector:@selector(viewZoomReset)];
+			}
 			ok(@"editor legacy scrollers",
 				d.editor.scrollView.scrollerStyle == NSScrollerStyleLegacy);
 			const BOOL menu0 = controller.window.contentView.subviews.firstObject.hidden;

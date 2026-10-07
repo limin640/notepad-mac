@@ -349,6 +349,10 @@ static NPLoadBuf NPPrepareUTF8Load(NSData *data) {
 		}
 		if (scn->updated & SC_UPDATE_V_SCROLL)
 			[[NSNotificationCenter defaultCenter] postNotificationName:@"EditorDocumentScrolled" object:self];
+	} else if (scn->nmhdr.code == SCN_ZOOM) {
+		// 字号变化后行号列宽度需重算（Ctrl+滚轮缩放也会走到这里）
+		[self updateLineNumberWidth];
+		[[NSNotificationCenter defaultCenter] postNotificationName:@"EditorDocumentZoomChanged" object:self];
 	} else if (scn->nmhdr.code == SCN_INDICATORCLICK) {
 		[self openDetectedURLAt:[_editor string] bytePos:scn->position];
 	}
